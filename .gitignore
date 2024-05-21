@@ -1,0 +1,8 @@
+.directory
+
+*.test
+*.out
+*.pprof
+
+*.brename_detail.txt
+.Rhistory
