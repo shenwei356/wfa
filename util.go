@@ -221,9 +221,9 @@ func PrintComponent(wtr io.Writer, M []*[]uint32, name string) {
 func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) {
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)
-	for range *t {
+	for range *q {
 		r := poolRow.Get().(*[]int32)
-		for range *q {
+		for range *t {
 			*r = append(*r, -1)
 		}
 		*m = append(*m, r)
@@ -233,11 +233,13 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 	var k, _k int
 	var offset uint32
 	var v, h int
+	lenQ := len(*q)
+	lenT := len(*t)
 	for s, offsets := range M {
 		if offsets == nil {
 			continue
 		}
-		// fmt.Println(*offsets)
+		// fmt.Printf("s: %d\n", s)
 		for _k, offset = range *offsets { // k:  0, -1 , 1, -2, 2
 			if offset == 0 {
 				continue
@@ -249,18 +251,21 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			} else { // 1, 2
 				k = _k >> 1
 			}
-			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset)
+			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
 
 			if isM {
 				for h = int(offset>>wfaTypeBits) - 1; h >= 0; h-- { // yes, in reverse order
+					// fmt.Printf("    h:%d, v:%d\n", h, h-k)
 					v = h - k
-					if v < 0 {
+					if v < 0 || v >= lenQ || h >= lenT {
 						break
 					}
+
+					// fmt.Printf("     h:%d, v:%d, s:%d\n", h, v, (*(*m)[v])[h])
 					if (*(*m)[v])[h] < 0 { // only set unsetted
-						// fmt.Printf("     v:%d, h:%d\n", v, h)
 						(*(*m)[v])[h] = int32(s)
 					}
+
 					if (*q)[v] != (*t)[h] {
 						break
 					}
@@ -268,7 +273,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			} else {
 				h = int(offset>>wfaTypeBits) - 1
 				v = h - k
-				if v >= 0 {
+				if v >= 0 && v < len(*m) && h < len(*(*m)[v]) {
 					(*(*m)[v])[h] = int32(s)
 				}
 			}
@@ -276,12 +281,12 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 	}
 
 	// sequence q
-	for _, b := range *q {
+	for _, b := range *t {
 		fmt.Fprintf(wtr, "\t%c", b)
 	}
 	fmt.Fprintln(wtr)
 
-	for v, b := range *t {
+	for v, b := range *q {
 		fmt.Fprintf(wtr, "%c", b)    // a base in seq t
 		for _, s := range *(*m)[v] { // a row of the matrix
 			if s < 0 {

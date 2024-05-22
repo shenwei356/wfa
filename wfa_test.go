@@ -30,14 +30,26 @@ func TestWFA(_t *testing.T) {
 	algn := New()
 
 	// from the paper Bioinformatics, 37(4), 2021, 456–463
-	// q := []byte("GAGATA")
-	// t := []byte("GATACA")
+	// q := []byte("GATACA")
+	// t := []byte("GAGATA")
 
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
-	q := []byte("AGGATGCTCG")
-	t := []byte("ACCATACTCG")
+	q := []byte("ACCATACTCG")
+	t := []byte("AGGATGCTCG")
 
-	algn.Align(&q, &t)
+	// from https://github.com/smarco/WFA2-lib
+	//    PATTERN    A-GCTA-GTGTC--AATGGCTACT-T-T-TCAGGTCCT
+	//                |  ||| |||||    |||||||| | | |||||||||
+	//    TEXT       AA-CTAAGTGTCGG--TGGCTACTATATATCAGGTCCT
+	//    ALIGNMENT  1M1I1D3M1I5M2I2D8M1I1M1I1M1I9M
+	// q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
+	// t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
+
+	cigar, err := algn.Align(&q, &t)
+	if err != nil {
+		_t.Error(err)
+		return
+	}
 
 	// wtr := os.Stdout
 
@@ -53,5 +65,9 @@ func TestWFA(_t *testing.T) {
 	PrintComponent(os.Stdout, algn.D, "D")
 	algn.Plot(&q, &t, os.Stdout, algn.D, false)
 
+	if cigar != nil {
+		fmt.Printf("\nAlignment: %s\n", cigar.String())
+		RecycleCIGAR(cigar)
+	}
 	RecycleAligner(algn)
 }

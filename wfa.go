@@ -21,6 +21,7 @@
 package wfa
 
 import (
+	"fmt"
 	"sync"
 )
 
@@ -71,6 +72,7 @@ func RecycleAligner(algn *Aligner) {
 }
 
 // New returns a new Aligner with default penalties from the object pool.
+// Do not forget to call RecycleAligner after using it.
 func New() *Aligner {
 	algn := poolAligner.Get().(*Aligner)
 	algn.p = &DefaultPenalties
@@ -115,8 +117,20 @@ func (algn *Aligner) resetComponent(M *[]*[]uint32) {
 	*M = (*M)[:0]
 }
 
+// ErrEmptySeq means one of the query or target sequence is empty
+var ErrEmptySeq error = fmt.Errorf("wfa: invalid empty sequence")
+
+// ErrLens means query seq is longer than target seq
+var ErrLens error = fmt.Errorf("wfa: query seq longer than target seq")
+
 // Align performs alignment for two sequence
-func (algn *Aligner) Align(q, t *[]byte) error {
+func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
+	if len(*q) == 0 || len(*t) == 0 {
+		return nil, ErrEmptySeq
+	}
+	if len(*q) > len(*t) {
+		return nil, ErrLens
+	}
 	// reset the stats
 	algn.reset()
 
@@ -127,6 +141,7 @@ func (algn *Aligner) Align(q, t *[]byte) error {
 	m, n := len(*t), len(*q)
 	Ak := m - n
 	Aoffset := uint32(m)
+	var offset uint32
 
 	M := &algn.M
 
@@ -143,7 +158,8 @@ func (algn *Aligner) Align(q, t *[]byte) error {
 			// if reachTheEnd {
 			// 	break
 			// }
-			if (*(*M)[s])[Ak]>>wfaTypeBits >= Aoffset {
+			offset, _ = getOffset((*M)[s], Ak)
+			if offset>>wfaTypeBits >= Aoffset {
 				break
 			}
 		}
@@ -155,7 +171,7 @@ func (algn *Aligner) Align(q, t *[]byte) error {
 
 	}
 
-	return nil
+	return algn.backTrace(q, t, s, Ak), nil
 }
 
 // extend refers to the WF_EXTEND method.
@@ -181,7 +197,7 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) bool {
 
 		h = int(offset >> wfaTypeBits)
 		v = h - k
-		if v < 0 {
+		if v < 0 || v >= lenQ || h >= lenT {
 			continue
 		}
 		for (*q)[v] == (*t)[h] {
@@ -206,7 +222,10 @@ const (
 	wfaDeleteOpen
 	wfaDeleteExt
 	wfaMismatch
+	wfaMatch // only for backtrace
 )
+
+var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M'}
 
 func wfaType2str(t uint32) string {
 	switch t {
@@ -220,6 +239,8 @@ func wfaType2str(t uint32) string {
 		return "D.E"
 	case wfaMismatch:
 		return "Mis"
+	case wfaMatch:
+		return "Mat"
 	default:
 		return "N/A"
 	}
@@ -274,7 +295,8 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 				wfaTypeI = wfaInsertExt
 			}
 			setOffset2(I, s, k, Isk<<wfaTypeBits|wfaTypeI)
-			// fmt.Printf("  fromM:%v, fromD:%v, save I: s=%d, k=%d, offset:%d, type:%s\n", fromM, fromI, s, k, Isk, wfaType2str(wfaTypeI))
+			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
+			// 	Isk, fromM, v1, fromI, v2, s, k, Isk, wfaType2str(wfaTypeI))
 		}
 
 		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
@@ -296,31 +318,32 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 				wfaTypeD = wfaDeleteExt
 			}
 			setOffset2(D, s, k, Dsk<<wfaTypeBits|wfaTypeD)
-			// fmt.Printf("  fromM:%v, fromD:%v, save D: s=%d, k=%d, offset:%d, type:%s\n", fromM, fromD, s, k, Dsk, wfaType2str(wfaTypeD))
+			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save D: s=%d, k=%d, offset:%d, type:%s\n",
+			// 	Dsk, fromM, v1, fromD, v2, s, k, Dsk, wfaType2str(wfaTypeD))
 		}
 
 		v1, fromM = getOffset2(M, s, p.Mismatch, k)
 		v1 >>= wfaTypeBits
-		Msk = max(v1+1, Isk, Dsk)
+		Msk = max(Isk, Dsk, v1+1)
 		if updatedI || updatedD || fromM {
 			updatedM = true
 			if updatedI && updatedD && fromM {
-				if Msk == v1+1 {
+				if Msk == Isk {
 					wfaTypeM = wfaTypeI
-				} else if Msk == Isk {
+				} else if Msk == Dsk {
 					wfaTypeM = wfaTypeD
 				} else {
 					wfaTypeM = wfaMismatch
 				}
 			} else if updatedI {
 				if updatedD { // updatedI && updatedD && !fromM
-					if Msk == v1+1 {
+					if Msk == Isk {
 						wfaTypeM = wfaTypeI
 					} else {
 						wfaTypeM = wfaTypeD
 					}
 				} else if fromM { // updatedI && !updatedD && fromM
-					if Msk == v1+1 {
+					if Msk == Isk {
 						wfaTypeM = wfaTypeI
 					} else {
 						wfaTypeM = wfaMismatch
@@ -330,7 +353,7 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 				}
 			} else if updatedD {
 				if fromM { // !updatedI && updatedD && fromM
-					if Msk == Isk {
+					if Msk == Dsk {
 						wfaTypeM = wfaTypeD
 					} else {
 						wfaTypeM = wfaMismatch
@@ -338,12 +361,13 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 				} else { // !updatedI && updatedD && !fromM
 					wfaTypeM = wfaTypeD
 				}
-			} else { // !updatedI && !updatedD && !fromM
+			} else { // !updatedI && !updatedD && fromM
 				wfaTypeM = wfaMismatch
 			}
 
 			setOffset2(M, s, k, Msk<<wfaTypeBits|wfaTypeM)
-			// fmt.Printf("  fromI:%v, fromD:%v, fromM:%v, save M: s=%d, k=%d, offset:%d,type:%s\n", updatedI, updatedD, fromM, s, k, Msk, wfaType2str(wfaTypeM))
+			// fmt.Printf("  %d fromI:%v(%d), fromD:%v(%d), fromM:%v(%d), save M: s=%d, k=%d, offset:%d, type:%s\n",
+			// 	Msk, updatedI, Isk, updatedD, Dsk, fromM, v1+1, s, k, Msk, wfaType2str(wfaTypeM))
 		}
 	}
 
@@ -360,6 +384,92 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 }
 
 // backTrace backtraces the alignment
-func (algn *Aligner) backTrace(q, t *[]byte, s uint32) {
+func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
+	M := &algn.M
+	p := algn.p
+	cigar := NewCIGAR()
+	var ok bool
+	var k, h, v int
+	var offset, wfaType uint32
+	// fmt.Printf("backtrace from M%d,%d:\n", s, Ak)
 
+	k = Ak
+	var op byte
+	var n uint32
+	var wfaTypePre uint32
+LOOP:
+	for {
+		if wfaTypePre > 0 {
+			op = wfaOps[wfaTypePre]
+			cigar.AddN(op, 1)
+			// fmt.Printf("  addPre. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
+		}
+
+		offset, ok = getOffset((*M)[s], k)
+		if !ok {
+			break
+		}
+		h = int(offset>>wfaTypeBits) - 1
+		wfaType = offset & wfaTypeMask
+		op = wfaOps[wfaType] // set op temporally
+
+		v = h - k
+
+		n = 0
+		for (*q)[v] == (*t)[h] {
+			n++
+
+			v--
+			h--
+			if v < 0 || h < 0 {
+				break
+			}
+		}
+
+		if n > 0 {
+			op = wfaOps[wfaMatch] // correct it as M
+			cigar.AddN(op, n)
+			// fmt.Printf("  addMul. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 	wfaType2str(wfaMatch), op, n, h+1, v+1)
+
+			wfaTypePre = wfaType
+		} else {
+			cigar.AddN(op, 1)
+			// fmt.Printf("  addSig. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 	wfaType2str(wfaType), op, 1, h, v)
+
+			wfaTypePre = 0
+		}
+
+		switch wfaType {
+		case wfaInsertOpen:
+			s -= p.GapOpen + p.GapExt
+			k--
+		case wfaInsertExt:
+			s -= p.GapExt
+			k--
+		case wfaDeleteOpen:
+			s -= p.GapOpen + p.GapExt
+			k++
+		case wfaDeleteExt:
+			s -= p.GapExt
+			k++
+		case wfaMismatch:
+			s -= p.Mismatch
+		default:
+			break LOOP
+		}
+
+		// fmt.Printf("  new s: %d, k: %d\n", s, k)
+	}
+
+	if wfaTypePre > 0 {
+		op = wfaOps[wfaTypePre]
+		cigar.AddN(op, 1)
+		// fmt.Printf("  addPre. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+		// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
+	}
+
+	return cigar
 }
