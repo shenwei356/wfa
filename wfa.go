@@ -246,6 +246,8 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			// fmt.Printf("  fromI:%v, fromD:%v, fromM:%v, save M: s=%d, k=%d, offset:%d, %d\n", updatedI, updatedD, fromM, s, k, Msk, (*M)[s])
 		}
 	}
+
+	// fill with nil, so the score would be the right index
 	if !updatedM {
 		*M = append(*M, nil)
 	}
@@ -255,10 +257,6 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 	if !updatedD {
 		*D = append(*D, nil)
 	}
-
-	// fmt.Printf("  M: %v, Ms: %v\n", *M, (*M)[s])
-	// fmt.Printf("  I: %v, Is: %v\n", *I, (*I)[s])
-	// fmt.Printf("  D: %v, Ds: %v\n", *D, (*D)[s])
 }
 
 // backTrace backtraces the alignment

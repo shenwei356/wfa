@@ -29,8 +29,11 @@ import (
 func TestWFA(_t *testing.T) {
 	algn := New()
 
+	// from the paper Bioinformatics, 37(4), 2021, 456–463
 	// q := []byte("GAGATA")
 	// t := []byte("GATACA")
+
+	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
 	q := []byte("AGGATGCTCG")
 	t := []byte("ACCATACTCG")
 

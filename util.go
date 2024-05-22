@@ -39,19 +39,30 @@ func kLowHigh(offsets *[]uint32) (lo int, hi int) {
 		return 0, 0
 	}
 
-	l := len(*offsets)
-	negative := true
+	l := len(*offsets) - 1
+	var gotLo, gotHi bool
 	// k:  0, -1 , 1, -2, 2
-	for i := 1; i < l; i++ {
-		if (*offsets)[i] > 0 {
-			if negative {
+	for i := l; i >= 1; i-- { // start from the end
+		if (*offsets)[i] == 0 {
+			continue
+		}
+		if i&1 == 1 {
+			if !gotLo {
 				lo = -(i + 1) >> 1
-			} else {
-				hi = i >> 1
+				gotLo = true
+
+				if gotHi {
+					break
+				}
+			}
+		} else if !gotHi {
+			hi = i >> 1
+			gotHi = true
+
+			if gotLo {
+				break
 			}
 		}
-
-		negative = !negative
 	}
 
 	return
