@@ -191,6 +191,32 @@ func getOffset2(M *[]*[]uint32, s uint32, d uint32, k int) (uint32, bool) {
 
 // --------------------------------------------------------------
 
+// PrintComponent lists the component details.
+func PrintComponent(wtr io.Writer, M []*[]uint32, name string) {
+	var _k, k int
+	var offset uint32
+	for _s, offsets := range M {
+		if offsets != nil {
+			fmt.Fprintf(wtr, "%s%d:", name, _s)
+			for _k, offset = range *offsets {
+				if offset == 0 {
+					continue
+				}
+				if _k == 0 { // 0
+					k = 0
+				} else if _k&1 == 1 { // negative
+					k = -((_k + 1) >> 1)
+				} else { // 1, 2
+					k = _k >> 1
+				}
+
+				fmt.Fprintf(wtr, " k(%d):%d(%s)", k, offset>>wfaTypeBits, wfaType2str(offset&wfaTypeMask))
+			}
+			fmt.Fprintln(wtr)
+		}
+	}
+}
+
 // Plot plots one WFA component.
 func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) {
 	// create the matrix
@@ -226,7 +252,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset)
 
 			if isM {
-				for h = int(offset) - 1; h >= 0; h-- { // yes, in reverse order
+				for h = int(offset>>wfaTypeBits) - 1; h >= 0; h-- { // yes, in reverse order
 					v = h - k
 					if v < 0 {
 						break
@@ -240,7 +266,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 					}
 				}
 			} else {
-				h = int(offset) - 1
+				h = int(offset>>wfaTypeBits) - 1
 				v = h - k
 				if v >= 0 {
 					(*(*m)[v])[h] = int32(s)
