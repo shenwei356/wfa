@@ -28,97 +28,110 @@ import (
 
 // --------------------------------------------------------------
 
-// kLowHigh is a function to return the lowest and largest k values.
+// kLowHigh is a function to return the lowest and highest k values from a list of offsets,
+// where the offsets are saved like this:
+//
+//	offset(k=0), offset(k=-1), offset(k=1), offset(k=-2), offset(k=2), ...
+//
+// If the offset is 0, that means there's no record.
 func kLowHigh(offsets *[]uint32) (lo int, hi int) {
 	if len(*offsets) == 1 {
 		return 0, 0
 	}
 
 	l := len(*offsets)
-	var v uint32
-	// curently we simply read the list twice for simplicy.
+	negative := true
 	// k:  0, -1 , 1, -2, 2
-	for i := 1; i < l; i += 2 {
-		v = (*offsets)[i]
-		if v != 0 {
-			lo = -(i + 1) >> 1
+	for i := 1; i < l; i++ {
+		if (*offsets)[i] > 0 {
+			if negative {
+				lo = -(i + 1) >> 1
+			} else {
+				hi = i >> 1
+			}
 		}
+
+		negative = !negative
 	}
-	for i := 2; i < l; i += 2 {
-		v = (*offsets)[i]
-		if v != 0 {
-			hi = i >> 1
-		}
-	}
+
 	return
 }
 
-// kLowHigh2 check s first.
+// kLowHigh2 is similar with kLowHigh, but the input is offsets of all scores.
+// it returns result for the score 's-d'. So it checks the scores first.
+// d
 func kLowHigh2(M *[]*[]uint32, s uint32, d uint32) (lo int, hi int) {
 	if d > s {
 		return 0, 0
 	}
+
 	s = s - d
-	if int(s) <= len(*M) || (*M)[s] == nil {
+	if int(s) >= len(*M) || (*M)[s] == nil {
 		return 0, 0
 	}
+
 	return kLowHigh((*M)[s])
 }
 
+// setOffset adds an offset of a k.
 func setOffset(offsets *[]uint32, k int, offset uint32) {
 	// k:  0, -1 , 1, -2, 2
 	if k == 0 {
 		if len(*offsets) == 0 {
-			*offsets = append(*offsets, 0)
+			*offsets = append(*offsets, offset)
+		} else {
+			(*offsets)[0] = offset
 		}
-		(*offsets)[0] = offset
-	} else if k < 0 {
-		n := (-k)<<1 - len(*offsets)
-		for i := 0; i < n; i++ {
-			*offsets = append(*offsets, 0)
-		}
-		(*offsets)[((-k)<<1)-1] = offset
-	} else {
+	} else if k > 0 {
 		n := k<<1 - len(*offsets) + 1
 		for i := 0; i < n; i++ {
 			*offsets = append(*offsets, 0)
 		}
 		(*offsets)[k<<1] = offset
-	}
-	// fmt.Printf("s: %d, k: %d, offset: %d, len(offsets)=%d\n", s, k, offset, len(*offsets))
-}
-
-func setOffsetUpdate(offsets *[]uint32, k int, delta uint32) {
-	// k:  0, -1 , 1, -2, 2
-	if k == 0 {
-		if len(*offsets) == 0 {
-			*offsets = append(*offsets, 0)
-		}
-		(*offsets)[0] += delta
-	} else if k < 0 {
+	} else {
 		n := (-k)<<1 - len(*offsets)
 		for i := 0; i < n; i++ {
 			*offsets = append(*offsets, 0)
 		}
-		(*offsets)[((-k)<<1)-1] += delta
-	} else {
+		(*offsets)[((-k)<<1)-1] = offset
+	}
+}
+
+// setOffset updates the offset of a k.
+func setOffsetUpdate(offsets *[]uint32, k int, delta uint32) {
+	// k:  0, -1 , 1, -2, 2
+	if k == 0 {
+		if len(*offsets) == 0 {
+			*offsets = append(*offsets, delta)
+		} else {
+			(*offsets)[0] += delta
+		}
+	} else if k > 0 {
 		n := k<<1 - len(*offsets) + 1
 		for i := 0; i < n; i++ {
 			*offsets = append(*offsets, 0)
 		}
 		(*offsets)[k<<1] += delta
+	} else {
+		n := (-k)<<1 - len(*offsets)
+		for i := 0; i < n; i++ {
+			*offsets = append(*offsets, 0)
+		}
+		(*offsets)[((-k)<<1)-1] += delta
 	}
 }
 
+// setOffset2 is similar with setOffset, but the input is offsets of all scores.
 func setOffset2(M *[]*[]uint32, s uint32, k int, offset uint32) {
-	if int(s) >= len(*M) {
+	if int(s) >= len(*M) { // fill the list of all offsets
 		n := int(s) + 1 - len(*M)
 		for i := 0; i < n; i++ {
 			*M = append(*M, nil)
 		}
 	}
+
 	offsets := (*M)[s]
-	if (*M)[s] == nil {
+	if (*M)[s] == nil { // creates a list of offsets
 		offsets = poolOffsets.Get().(*[]uint32)
 		(*M)[s] = offsets
 	}
@@ -126,31 +139,37 @@ func setOffset2(M *[]*[]uint32, s uint32, k int, offset uint32) {
 	setOffset(offsets, k, offset)
 }
 
+// getOffset returns the offset of a k and if it exists.
 func getOffset(offsets *[]uint32, k int) (uint32, bool) {
 	if offsets == nil {
 		return 0, false
 	}
+
 	if k == 0 {
 		if len(*offsets) < k+1 {
 			return 0, false
 		}
-		return (*offsets)[0], true
+		return (*offsets)[0], (*offsets)[0] > 0
 	}
+
 	var i int
 	if k < 0 {
 		i = ((-k) << 1) - 1
 		if len(*offsets) < i+1 {
 			return 0, false
 		}
-		return (*offsets)[i], true
+		return (*offsets)[i], (*offsets)[i] > 0
 	}
+
+	// k > 0
 	i = k << 1
 	if len(*offsets) < i+1 {
 		return 0, false
 	}
-	return (*offsets)[i], true
+	return (*offsets)[i], (*offsets)[i] > 0
 }
 
+// getOffset2 is similar with getOffset.
 func getOffset2(M *[]*[]uint32, s uint32, d uint32, k int) (uint32, bool) {
 	if M == nil || d > s {
 		return 0, false
@@ -161,7 +180,7 @@ func getOffset2(M *[]*[]uint32, s uint32, d uint32, k int) (uint32, bool) {
 
 // --------------------------------------------------------------
 
-// Plot plots one WFA component of the alignment.
+// Plot plots one WFA component.
 func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) {
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)
@@ -172,6 +191,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 		}
 		*m = append(*m, r)
 	}
+
 	// fill in scores
 	var k, _k int
 	var offset uint32
@@ -187,7 +207,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			}
 			if _k == 0 { // 0
 				k = 0
-			} else if _k&1 == 1 { // 0, -1, 1, -2, 2
+			} else if _k&1 == 1 { // negative
 				k = -((_k + 1) >> 1)
 			} else { // 1, 2
 				k = _k >> 1
@@ -195,7 +215,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset)
 
 			if isM {
-				for h = int(offset) - 1; h >= 0; h-- {
+				for h = int(offset) - 1; h >= 0; h-- { // yes, in reverse order
 					v = h - k
 					if v < 0 {
 						break
@@ -211,27 +231,28 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			} else {
 				h = int(offset) - 1
 				v = h - k
-				(*(*m)[v])[h] = int32(s)
+				if v >= 0 {
+					(*(*m)[v])[h] = int32(s)
+				}
 			}
-
 		}
 	}
 
+	// sequence q
 	for _, b := range *q {
 		fmt.Fprintf(wtr, "\t%c", b)
 	}
 	fmt.Fprintln(wtr)
 
 	for v, b := range *t {
-		fmt.Fprintf(wtr, "%c", b)
-		for _, s := range *(*m)[v] {
+		fmt.Fprintf(wtr, "%c", b)    // a base in seq t
+		for _, s := range *(*m)[v] { // a row of the matrix
 			if s < 0 {
 				fmt.Fprintf(wtr, "\t")
 			} else {
 				fmt.Fprintf(wtr, "\t%d", s)
 			}
 		}
-
 		fmt.Fprintln(wtr)
 	}
 
@@ -256,4 +277,5 @@ func recycleMatrix(m *[]*[]int32) {
 		}
 	}
 	*m = (*m)[:0]
+	poolMatrix.Put(m)
 }

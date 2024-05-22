@@ -70,7 +70,7 @@ func RecycleAligner(algn *Aligner) {
 	poolAligner.Put(algn)
 }
 
-// New returns a new Aligner with default penalties from the object pool
+// New returns a new Aligner with default penalties from the object pool.
 func New() *Aligner {
 	algn := poolAligner.Get().(*Aligner)
 	algn.p = &DefaultPenalties
@@ -84,28 +84,35 @@ func NewWithPenality(p *Penalties) *Aligner {
 	return algn
 }
 
-// reset resets the internal data before alignment
+// reset resets the internal data before alignment.
 func (algn *Aligner) reset() {
-	algn.resetOffsets(&algn.M)
-	algn.resetOffsets(&algn.I)
-	algn.resetOffsets(&algn.D)
+	algn.resetComponent(&algn.M)
+	algn.resetComponent(&algn.I)
+	algn.resetComponent(&algn.D)
 }
 
-// poolOffsets is a object pool for offsets
+// poolOffsets is a object pool for offsets.
 var poolOffsets = &sync.Pool{New: func() interface{} {
 	tmp := make([]uint32, 0, 128)
 	return &tmp
 }}
 
-// resetOffsets resets offsets
-func (algn *Aligner) resetOffsets(data *[]*[]uint32) {
-	for _, v := range *data {
+// initComponent inilializes a new WFA component.
+func (algn *Aligner) initComponent(M *[]*[]uint32) {
+	offsets := poolOffsets.Get().(*[]uint32)
+	*offsets = append(*offsets, 0)
+	*M = append(*M, offsets)
+}
+
+// resetComponent resets a WFA component (a list of offsets).
+func (algn *Aligner) resetComponent(M *[]*[]uint32) {
+	for _, v := range *M {
 		if v != nil {
 			*v = (*v)[:0]
 			poolOffsets.Put(v)
 		}
 	}
-	*data = (*data)[:0]
+	*M = (*M)[:0]
 }
 
 // Align performs alignment for two sequence
@@ -113,58 +120,25 @@ func (algn *Aligner) Align(q, t *[]byte) error {
 	// reset the stats
 	algn.reset()
 
+	algn.initComponent(&algn.M) // M[0,0] = 0
+	algn.initComponent(&algn.I) // I[0,0] = 0
+	algn.initComponent(&algn.D) // D[0,0] = 0
+
 	m, n := len(*t), len(*q)
 	Ak := m - n
 	Aoffset := uint32(m)
 
-	// M[0,0] = 0
 	M := &algn.M
-	offsets := poolOffsets.Get().(*[]uint32)
-	*offsets = append(*offsets, 0)
-	*M = append(*M, offsets)
-
-	// I[0,0] = 0
-	I := &algn.I
-	offsets = poolOffsets.Get().(*[]uint32)
-	*offsets = append(*offsets, 0)
-	*I = append(*I, offsets)
-
-	// D[0,0] = 0
-	D := &algn.D
-	offsets = poolOffsets.Get().(*[]uint32)
-	*offsets = append(*offsets, 0)
-	*D = append(*D, offsets)
+	// I := &algn.I
+	// D := &algn.D
 
 	var s uint32
 	// var reachTheEnd bool
 	for {
-		// fmt.Printf("--------------------------------\n")
-		// fmt.Printf("s: %d\n", s)
-		// fmt.Printf("extend:\n")
+		// fmt.Printf("---------------------- s: %-3d ----------------------\n", s)
 		if (*M)[s] != nil {
+			// fmt.Printf("extend:\n")
 			algn.extend((*M)[s], q, t)
-
-			// fmt.Printf("\nM ----------------\n")
-			// for _s, offsets := range *M {
-			// 	if offsets != nil {
-			// 		fmt.Printf("M%d: %d\n", _s, *offsets)
-			// 	}
-			// }
-			// algn.Plot(q, t, os.Stdout, algn.M, true)
-			// fmt.Printf("\nI ----------------\n")
-			// for _s, offsets := range *I {
-			// 	if offsets != nil {
-			// 		fmt.Printf("I%d: %d\n", _s, *offsets)
-			// 	}
-			// }
-			// algn.Plot(q, t, os.Stdout, algn.I, false)
-			// fmt.Printf("\nD ----------------\n")
-			// for _s, offsets := range *D {
-			// 	if offsets != nil {
-			// 		fmt.Printf("D%d: %d\n", _s, *offsets)
-			// 	}
-			// }
-			// algn.Plot(q, t, os.Stdout, algn.D, false)
 
 			// fmt.Printf("max offset: %d, Aoffset: %d\n", (*(*M)[s])[Ak], Aoffset)
 
@@ -196,16 +170,21 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte) bool {
 	lenQ := len(*q)
 	lenT := len(*t)
 	var reachTheEnd bool
-	for k := lo; k <= hi; k++ {
+	// processing in revsere order, just to reduce the append operations in setOffsetUpdate,
+	// where offsets of k are saved like this:
+	//   offset(k=0), offset(k=-1), offset(k=1), offset(k=-2), offset(k=2), ...
+	for k := hi; k >= lo; k-- {
 		offset, _ = getOffset(offsets, k)
 		h = int(offset)
 		v = h - k
-		// fmt.Printf("  for k: %d, v: %d, h: %d\n", k, v, h)
-
+		if v < 0 {
+			continue
+		}
 		for (*q)[v] == (*t)[h] {
 			setOffsetUpdate(offsets, k, 1)
 			v++
 			h++
+			// fmt.Printf("  k: %d, extend to h: %d, v: %d\n", k, h, v)
 
 			if v == lenQ || h == lenT {
 				reachTheEnd = true
@@ -232,40 +211,40 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 	lo := min(loMismatch, loGapOpen, loInsert, loDelete) - 1
 	// fmt.Printf("s: %d, k: %d -> %d\n", s, lo, hi)
 
-	var ok1, ok2, ok3 bool
+	var fromM bool
+	var fromI, fromD bool
 	var v1, v2 uint32
 	var Isk, Dsk, Msk uint32
 	var updatedI, updatedD, updatedM bool
 	for k := lo; k <= hi; k++ {
+		updatedI, updatedD, updatedM = false, false, false
 		// fmt.Printf(" k: %d\n", k)
 
-		v1, ok1 = getOffset2(M, s, p.GapOpen+p.GapExt, k-1)
-		v2, _ = getOffset2(I, s, p.GapExt, k-1)
+		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k-1)
+		v2, fromI = getOffset2(I, s, p.GapExt, k-1)
 		Isk = max(v1, v2) + 1
-		if ok1 {
-			setOffset2(I, s, k, Isk)
-			// fmt.Printf("  save I: s=%d, k=%d, offset:%d, %d\n", s, k, Isk, (*I)[s])
+		if fromM || fromI {
 			updatedI = true
+			setOffset2(I, s, k, Isk)
+			// fmt.Printf("  fromM:%v, fromD:%v, save I: s=%d, k=%d, offset:%d, %d\n", fromM, fromI, s, k, Isk, (*I)[s])
 		}
 
-		v1, ok2 = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
-		v2, _ = getOffset2(D, s, p.GapExt, k+1)
+		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
+		v2, fromD = getOffset2(D, s, p.GapExt, k+1)
 		Dsk = max(v1, v2)
-		if ok2 {
-			setOffset2(D, s, k, Dsk)
-			// fmt.Printf("  save D: s=%d, k=%d, offset:%d, %d\n", s, k, Dsk, (*D)[s])
+		if fromM || fromD {
 			updatedD = true
+			setOffset2(D, s, k, Dsk)
+			// fmt.Printf("  fromM:%v, fromD:%v, save D: s=%d, k=%d, offset:%d, %d\n", fromM, fromD, s, k, Dsk, (*D)[s])
 		}
 
-		v1, ok3 = getOffset2(M, s, p.Mismatch, k)
+		v1, fromM = getOffset2(M, s, p.Mismatch, k)
 		Msk = max(v1+1, Isk, Dsk)
-		if ok1 || ok2 || ok3 {
-			setOffset2(M, s, k, Msk)
-			// fmt.Printf("  save M: s=%d, k=%d, offset:%d, %d\n", s, k, Msk, (*M)[s])
+		if updatedI || updatedD || fromM {
 			updatedM = true
+			setOffset2(M, s, k, Msk)
+			// fmt.Printf("  fromI:%v, fromD:%v, fromM:%v, save M: s=%d, k=%d, offset:%d, %d\n", updatedI, updatedD, fromM, s, k, Msk, (*M)[s])
 		}
-
-		// fmt.Printf("  Isk: %d, Dsk: %d, Msk: %d\n", Isk, Dsk, Msk)
 	}
 	if !updatedM {
 		*M = append(*M, nil)

@@ -29,28 +29,32 @@ import (
 func TestWFA(_t *testing.T) {
 	algn := New()
 
-	q := []byte("GAGATA")
-	t := []byte("GATACA")
+	// q := []byte("GAGATA")
+	// t := []byte("GATACA")
+	q := []byte("AGGATGCTCG")
+	t := []byte("ACCATACTCG")
 
 	algn.Align(&q, &t)
 
 	// wtr := os.Stdout
 
-	fmt.Printf("\nM ----------------\n")
+	fmt.Printf("\n---------------- M ----------------\n")
 	for _s, offsets := range algn.M {
 		if offsets != nil {
 			fmt.Printf("M%d: %d\n", _s, *offsets)
 		}
 	}
 	algn.Plot(&q, &t, os.Stdout, algn.M, true)
-	fmt.Printf("\nI ----------------\n")
+
+	fmt.Printf("\n---------------- I ----------------\n")
 	for _s, offsets := range algn.I {
 		if offsets != nil {
 			fmt.Printf("I%d: %d\n", _s, *offsets)
 		}
 	}
 	algn.Plot(&q, &t, os.Stdout, algn.I, false)
-	fmt.Printf("\nD ----------------\n")
+
+	fmt.Printf("\n---------------- D ----------------\n")
 	for _s, offsets := range algn.D {
 		if offsets != nil {
 			fmt.Printf("D%d: %d\n", _s, *offsets)
