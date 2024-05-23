@@ -27,7 +27,9 @@ import (
 )
 
 func TestWFA(_t *testing.T) {
-	algn := New()
+	algn := New(DefaultPenalties, &Options{
+		GlobalAlignment: false,
+	})
 
 	// from the paper Bioinformatics, 37(4), 2021, 456–463
 	// q := []byte("GATACA")

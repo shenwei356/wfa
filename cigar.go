@@ -59,7 +59,9 @@ func (cigar *CIGAR) reset() {
 
 // RecycleCIGAR recycle a CIGAR object.
 func RecycleCIGAR(cigar *CIGAR) {
-	poolCIGAR.Put(cigar)
+	if cigar != nil {
+		poolCIGAR.Put(cigar)
+	}
 }
 
 // object pool of a CIGAR.
