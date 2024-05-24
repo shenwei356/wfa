@@ -21,6 +21,7 @@
 package wfa
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"testing"
@@ -28,7 +29,7 @@ import (
 
 func TestWFA(_t *testing.T) {
 	algn := New(DefaultPenalties, &Options{
-		GlobalAlignment: false,
+		GlobalAlignment: true,
 	})
 
 	// from the paper Bioinformatics, 37(4), 2021, 456–463
@@ -36,17 +37,21 @@ func TestWFA(_t *testing.T) {
 	// t := []byte("GAGATA")
 
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
-	q := []byte("ACCATACTCG")
-	t := []byte("AGGATGCTCG")
+	// q := []byte("ACCATACTCG")
+	// t := []byte("AGGATGCTCG")
+	// q := []byte("ACCATACTCGAC")
+	// t := []byte("AGGATGCTCGAC")
 
 	// from https://github.com/smarco/WFA2-lib
-	//    PATTERN    A-GCTA-GTGTC--AATGGCTACT-T-T-TCAGGTCCT
-	//                |  ||| |||||    |||||||| | | |||||||||
-	//    TEXT       AA-CTAAGTGTCGG--TGGCTACTATATATCAGGTCCT
-	//    ALIGNMENT  1M1I1D3M1I5M2I2D8M1I1M1I1M1I9M
-	// q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
-	// t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
+	//    PATTERN    AGCTA-GTGTCAATGGCTACT---TTTCAGGTCCT
+	//               | ||| |||||  ||||||||   | |||||||||
+	//    TEXT       AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT
+	//    ALIGNMENT  1M1X3M1I5M2X8M3I1M1X9M
+	q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
+	t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
 
+	q = bytes.ToUpper(q)
+	t = bytes.ToUpper(t)
 	cigar, err := algn.Align(&q, &t)
 	if err != nil {
 		_t.Error(err)
@@ -56,19 +61,26 @@ func TestWFA(_t *testing.T) {
 	// wtr := os.Stdout
 
 	fmt.Printf("\n---------------- M ----------------\n")
-	PrintComponent(os.Stdout, algn.M, "M")
+	// PrintComponent(os.Stdout, algn.M, "M")
 	algn.Plot(&q, &t, os.Stdout, algn.M, true)
 
-	fmt.Printf("\n---------------- I ----------------\n")
-	PrintComponent(os.Stdout, algn.I, "I")
+	// fmt.Printf("\n---------------- I ----------------\n")
+	// PrintComponent(os.Stdout, algn.I, "I")
 	algn.Plot(&q, &t, os.Stdout, algn.I, false)
 
-	fmt.Printf("\n---------------- D ----------------\n")
-	PrintComponent(os.Stdout, algn.D, "D")
+	// fmt.Printf("\n---------------- D ----------------\n")
+	// PrintComponent(os.Stdout, algn.D, "D")
 	algn.Plot(&q, &t, os.Stdout, algn.D, false)
 
 	if cigar != nil {
-		fmt.Printf("\nAlignment: %s\n", cigar.String())
+		fmt.Printf("Region: q[%d, %d] vs t[%d, %d]\n", cigar.QBegin+1, cigar.QEnd+1, cigar.TBegin+1, cigar.TEnd+1)
+		fmt.Printf("CIGAR:  %s\n", cigar.CIGAR())
+		Q, A, T := cigar.Alignment(&q, &t)
+		fmt.Printf("query   %s\n", *Q)
+		fmt.Printf("        %s\n", *A)
+		fmt.Printf("target  %s\n", *T)
+
+		RecycleAlignment(Q, A, T)
 		RecycleCIGAR(cigar)
 	}
 	RecycleAligner(algn)

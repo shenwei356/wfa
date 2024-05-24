@@ -232,14 +232,17 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 	// fill in scores
 	var k, _k int
 	var offset uint32
+	var wfaType uint32
 	var v, h int
+	// var vp, hp int
 	lenQ := len(*q)
 	lenT := len(*t)
 	for s, offsets := range M {
 		if offsets == nil {
 			continue
 		}
-		// fmt.Printf("s: %d\n", s)
+		fmt.Printf("s: %d\n", s)
+		// wfaTypePre = 0
 		for _k, offset = range *offsets { // k:  0, -1 , 1, -2, 2
 			if offset == 0 {
 				continue
@@ -251,48 +254,62 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			} else { // 1, 2
 				k = _k >> 1
 			}
-			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
+			fmt.Printf("  fill _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
 
+			wfaType = offset & wfaTypeMask
 			if isM {
 				for h = int(offset>>wfaTypeBits) - 1; h >= 0; h-- { // yes, in reverse order
-					// fmt.Printf("    h:%d, v:%d\n", h, h-k)
+					fmt.Printf("    h:%d, v:%d\n", h, h-k)
 					v = h - k
 					if v < 0 || v >= lenQ || h >= lenT {
 						break
 					}
 
-					// fmt.Printf("     h:%d, v:%d, s:%d\n", h, v, (*(*m)[v])[h])
 					if (*(*m)[v])[h] < 0 { // only set unsetted
-						(*(*m)[v])[h] = int32(s)
+						(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+						// set the type as match.
+						// fmt.Printf("     set h:%d, v:%d as s:%d\n", h+1, v+1, s)
+						// (*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch)
+						// vp, hp = v, h
 					}
 
 					if (*q)[v] != (*t)[h] {
 						break
 					}
 				}
+				// set the first one with the original type
+				// fmt.Printf("     change back h:%d, v:%d as s:%d\n", h+1, v+1, s)
+				// (*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType)
 			} else {
 				h = int(offset>>wfaTypeBits) - 1
 				v = h - k
 				if v >= 0 && v < len(*m) && h < len(*(*m)[v]) {
-					(*(*m)[v])[h] = int32(s)
+					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
 				}
 			}
 		}
 	}
 
 	// sequence q
+
+	fmt.Fprintf(wtr, "   \t ")
+	for h := range *t {
+		fmt.Fprintf(wtr, "\t%3d", h+1)
+	}
+	fmt.Fprintln(wtr)
+	fmt.Fprintf(wtr, "   \t ")
 	for _, b := range *t {
-		fmt.Fprintf(wtr, "\t%c", b)
+		fmt.Fprintf(wtr, "\t%3c", b)
 	}
 	fmt.Fprintln(wtr)
 
 	for v, b := range *q {
-		fmt.Fprintf(wtr, "%c", b)    // a base in seq t
-		for _, s := range *(*m)[v] { // a row of the matrix
+		fmt.Fprintf(wtr, "%3d\t%c", v+1, b) // a base in seq t
+		for _, s := range *(*m)[v] {        // a row of the matrix
 			if s < 0 {
-				fmt.Fprintf(wtr, "\t")
+				fmt.Fprintf(wtr, "\t  .")
 			} else {
-				fmt.Fprintf(wtr, "\t%d", s)
+				fmt.Fprintf(wtr, "\t%c%2d", wfaArrows[s&int32(wfaTypeMask)], s>>int32(wfaTypeBits))
 			}
 		}
 		fmt.Fprintln(wtr)

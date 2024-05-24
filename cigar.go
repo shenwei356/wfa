@@ -28,10 +28,14 @@ import (
 
 // CIGAR represent a CIGAR structure.
 type CIGAR struct {
-	Ops   []*CIGARRecord
+	Ops []*CIGARRecord
+
+	TBegin, TEnd int // 0-based location of the alignment in target seq
+	QBegin, QEnd int // 0-based location of the alignment in query seq
+
 	Score uint32
 
-	reversed bool
+	proccessed bool
 }
 
 // CIGARRecord records the operation and the number.
@@ -54,7 +58,7 @@ func (cigar *CIGAR) reset() {
 	}
 	cigar.Ops = cigar.Ops[:0]
 	cigar.Score = 0
-	cigar.reversed = false
+	cigar.proccessed = false
 }
 
 // RecycleCIGAR recycle a CIGAR object.
@@ -98,25 +102,150 @@ func (cigar *CIGAR) Update(n uint32) {
 	}
 }
 
-// reverse just reverses the order of all operations.
-func (cigar *CIGAR) reverse() {
-	if cigar.reversed {
+// process processes the data
+func (cigar *CIGAR) process() {
+	if cigar.proccessed {
 		return
 	}
-	s := cigar.Ops
-	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
-		s[i], s[j] = s[j], s[i]
+	s := &cigar.Ops
+
+	// reverse the order of all operations.
+	var i, j int
+	for i, j = 0, len(*s)-1; i < j; i, j = i+1, j-1 {
+		(*s)[i], (*s)[j] = (*s)[j], (*s)[i]
 	}
-	cigar.reversed = true
+
+	// merge operations of the same type.
+	var opPre, op *CIGARRecord
+	var newOp bool
+	i, j = 0, 0
+	opPre = (*s)[0]
+	for i = 1; i < len(*s); i++ {
+		op = (*s)[i]
+		if op.Op == opPre.Op {
+			opPre.N += op.N // update count
+
+			if !newOp {
+				j = i // mark insert position
+				newOp = true
+			}
+			continue
+		}
+
+		if newOp {
+			(*s)[j] = op
+			j++
+		}
+
+		opPre = op
+	}
+	if j > 0 {
+		*s = (*s)[:j]
+	}
+
+	cigar.proccessed = true
 }
 
-// String returns the CIGAR
-func (cigar *CIGAR) String() string {
-	cigar.reverse()
-	var buf bytes.Buffer
+// CIGAR returns the CIGAR string
+func (cigar *CIGAR) CIGAR() string {
+	cigar.process()
+	buf := poolBytesBuffer.Get().(*bytes.Buffer)
+	buf.Reset()
+
 	for _, op := range cigar.Ops {
 		buf.WriteString(strconv.Itoa(int(op.N)))
 		buf.WriteByte(op.Op)
 	}
-	return buf.String()
+
+	text := buf.String()
+	poolBytesBuffer.Put(buf)
+	return text
+}
+
+// CIGAR returns the formated alignment strings for Query, Alignment, and Target.
+// Do not forget to recycle them with RecycleAlignment().
+func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
+	cigar.process()
+
+	Q := poolBytes.Get().(*[]byte)
+	A := poolBytes.Get().(*[]byte)
+	T := poolBytes.Get().(*[]byte)
+
+	var n, h, v int
+
+	// begining
+	n = cigar.TBegin
+	for h = 0; h < n; h++ {
+		*Q = append(*Q, '-')
+		*A = append(*A, ' ')
+		*T = append(*T, (*t)[h])
+	}
+
+	// center
+	v, h = cigar.QBegin, cigar.TBegin
+	var i uint32
+	for _, op := range cigar.Ops {
+		switch op.Op {
+		case 'M':
+			for i = 0; i < op.N; i++ {
+				*Q = append(*Q, (*q)[v])
+				*A = append(*A, '|')
+				*T = append(*T, (*t)[h])
+				v++
+				h++
+			}
+		case 'X':
+			for i = 0; i < op.N; i++ {
+				*Q = append(*Q, (*q)[v])
+				*A = append(*A, ' ')
+				*T = append(*T, (*t)[h])
+				v++
+				h++
+			}
+		case 'I':
+			for i = 0; i < op.N; i++ {
+				*Q = append(*Q, '-')
+				*A = append(*A, ' ')
+				*T = append(*T, (*t)[h])
+				h++
+			}
+		case 'D':
+			for i = 0; i < op.N; i++ {
+				*Q = append(*Q, (*q)[v])
+				*A = append(*A, ' ')
+				*T = append(*T, '-')
+				v++
+			}
+		}
+	}
+
+	// ending
+	n = len(*t)
+	for h = cigar.TEnd + 1; h < n; h++ {
+		*Q = append(*Q, '-')
+		*A = append(*A, ' ')
+		*T = append(*T, (*t)[h])
+	}
+
+	return Q, A, T
+}
+
+// object pool of aligners.
+var poolBytesBuffer = &sync.Pool{New: func() interface{} {
+	buf := make([]byte, 1024)
+	return bytes.NewBuffer(buf)
+}}
+
+var poolBytes = &sync.Pool{New: func() interface{} {
+	buf := make([]byte, 0, 1024)
+	return &buf
+}}
+
+func RecycleAlignment(Q, A, T *[]byte) {
+	*Q = (*Q)[:0]
+	*A = (*A)[:0]
+	*T = (*T)[:0]
+	poolBytes.Put(Q)
+	poolBytes.Put(A)
+	poolBytes.Put(T)
 }
