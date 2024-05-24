@@ -112,7 +112,7 @@ var poolOffsets = &sync.Pool{New: func() interface{} {
 }}
 
 // initComponent inilializes a new WFA component.
-func (algn *Aligner) initComponent(M *[]*[]uint32, lenQ, lenT int) {
+func (algn *Aligner) initComponent(M *[]*[]uint32) {
 	offsets := poolOffsets.Get().(*[]uint32)
 	// *offsets = append(*offsets, 0)
 	*M = append(*M, offsets)
@@ -150,18 +150,20 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	// reset the stats
 	algn.reset()
 
-	algn.initComponent(&algn.M, n, m) // M[0,0] = 0
+	// -------------------------------------------------
+
+	algn.initComponent(&algn.M) // M[0,0] = 0
 
 	var wfaType uint32
-	// set the wfa type
-	if (*q)[0] == (*t)[0] {
+	// have to check the first bases
+	if (*q)[0] == (*t)[0] { // M[0,0] = 0
 		setOffsetUpdate(algn.M[0], 0, wfaMatch)
-	} else {
+	} else { // M[0,0] = 4
 		setOffset2(&algn.M, algn.p.Mismatch, 0, (1<<wfaTypeBits)|wfaMismatch)
 	}
 
-	if !algn.opt.GlobalAlignment {
-		for k := 1; k < m; k++ {
+	if !algn.opt.GlobalAlignment { // for semi-global alignment
+		for k := 1; k < m; k++ { // first row
 			if (*q)[0] == (*t)[k] {
 				wfaType = wfaMatch
 			} else {
@@ -169,7 +171,7 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 			}
 			setOffset2(&algn.M, 0, k, (uint32(k)<<wfaTypeBits)|wfaType)
 		}
-		for k := 1; k < n; k++ {
+		for k := 1; k < n; k++ { // first column
 			if (*q)[k] == (*t)[0] {
 				wfaType = wfaMatch
 			} else {
@@ -179,8 +181,10 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 		}
 	}
 
-	algn.initComponent(&algn.I, n, m) // I[0,0] = 0
-	algn.initComponent(&algn.D, n, m) // D[0,0] = 0
+	algn.initComponent(&algn.I)
+	algn.initComponent(&algn.D)
+
+	// -------------------------------------------------
 
 	Ak := m - n
 	Aoffset := uint32(m)
@@ -197,7 +201,7 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 			// fmt.Printf("max offset: %d, Aoffset: %d\n", (*(*M)[s])[Ak], Aoffset)
 
 			offset, _ = getOffset((*M)[s], Ak)
-			if offset>>wfaTypeBits >= Aoffset {
+			if offset>>wfaTypeBits >= Aoffset { // reached the end
 				break
 			}
 		}
@@ -258,6 +262,7 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 	for k := hi; k >= lo; k-- {
 		offset, ok = getOffset(offsets, k)
 		// fmt.Printf("    k:%d, ok:%v, offset:%d\n", k, ok, offset>>wfaTypeBits)
+
 		if s > 0 && !ok {
 			continue
 		}
@@ -285,13 +290,13 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 }
 
 const (
-	// type of the 5 kinds of offsets, which will be saved as the lowest 3bits of the offset.
+	// type of the 6 kinds of offsets, which will be saved as the lowest 3bits of the offset.
 	wfaInsertOpen uint32 = iota + 1
 	wfaInsertExt
 	wfaDeleteOpen
 	wfaDeleteExt
 	wfaMismatch
-	wfaMatch // only for backtrace
+	wfaMatch // only for backtrace, not saved in the component
 )
 
 var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M'}
@@ -316,6 +321,7 @@ func wfaType2str(t uint32) string {
 	}
 }
 
+// number of bits to save the path.
 const wfaTypeBits uint32 = 3
 const wfaTypeMask uint32 = (1 << wfaTypeBits) - 1
 
@@ -346,6 +352,8 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		wfaTypeI, wfaTypeD, wfaTypeM = 0, 0, 0
 		// fmt.Printf(" k: %d\n", k)
 
+		// --------------------------------------
+		// insertion: 🠦
 		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k-1)
 		v2, fromI = getOffset2(I, s, p.GapExt, k-1)
 		v1 >>= wfaTypeBits
@@ -369,6 +377,9 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			// fmt.Printf("  %d fromM:%v(%d), fromI:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Isk, fromM, v1, fromI, v2, s, k, Isk, wfaType2str(wfaTypeI))
 		}
+
+		// --------------------------------------
+		// deletion: 🠧
 
 		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
 		v2, fromD = getOffset2(D, s, p.GapExt, k+1)
@@ -394,12 +405,15 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			// 	Dsk, fromM, v1, fromD, v2, s, k, Dsk, wfaType2str(wfaTypeD))
 		}
 
+		// --------------------------------------
+		// mismatch: ⬂
+
 		v1, fromM = getOffset2(M, s, p.Mismatch, k)
 		v1 >>= wfaTypeBits
 		Msk = max(Isk, Dsk, v1+1)
 		if updatedI || updatedD || fromM {
 			if updatedI && updatedD && fromM {
-				if Msk == v1+1 { // mismatch is prefered
+				if Msk == v1+1 { // mismatch is prefered if it might come from 3 ways
 					wfaTypeM = wfaMismatch
 				} else if Msk == Isk {
 					wfaTypeM = wfaTypeI
@@ -488,7 +502,7 @@ LOOP:
 			break
 		}
 		if first {
-			h = int(offset>>wfaTypeBits) - 1 // fuck the offset might be extended ..fuck.
+			h = int(offset>>wfaTypeBits) - 1 // the offset might be extended
 		}
 		v = h - k
 		if v < 0 || h < 0 {

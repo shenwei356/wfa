@@ -277,6 +277,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 				continue
 			}
 
+			// for decide should we backtrace the matches
 			switch wfaType {
 			case wfaInsertOpen, wfaInsertExt, wfaDeleteOpen, wfaDeleteExt:
 				backTraceMat = false
@@ -324,21 +325,24 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 					// fmt.Printf("    check D: %d, %d\n", v, int(offsetID)-1)
 					break
 				}
+
 				n++
+
 				if (*(*m)[v])[h] >= 0 {
 					continue
 				}
 
 				// (*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
 				(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
-				vp, hp = v, h
+
+				vp, hp = v, h // for the last one (or the original one in the normal order), we will restore it.
 
 				if (*q)[v] != (*t)[h] {
 					break
 				}
 			}
 
-			if n == 0 {
+			if n == 0 { // just itself
 				vp, hp = v0, h0
 			}
 			(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
