@@ -39,8 +39,6 @@ func TestWFA(_t *testing.T) {
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
 	// q := []byte("ACCATACTCG")
 	// t := []byte("AGGATGCTCG")
-	// q := []byte("ACCATACTCGAC")
-	// t := []byte("AGGATGCTCGAC")
 
 	// from https://github.com/smarco/WFA2-lib
 	//    PATTERN    AGCTA-GTGTCAATGGCTACT---TTTCAGGTCCT
@@ -66,11 +64,11 @@ func TestWFA(_t *testing.T) {
 
 	// fmt.Printf("\n---------------- I ----------------\n")
 	// PrintComponent(os.Stdout, algn.I, "I")
-	algn.Plot(&q, &t, os.Stdout, algn.I, false)
+	// algn.Plot(&q, &t, os.Stdout, algn.I, false)
 
 	// fmt.Printf("\n---------------- D ----------------\n")
 	// PrintComponent(os.Stdout, algn.D, "D")
-	algn.Plot(&q, &t, os.Stdout, algn.D, false)
+	// algn.Plot(&q, &t, os.Stdout, algn.D, false)
 
 	if cigar != nil {
 		fmt.Printf("Region: q[%d, %d] vs t[%d, %d]\n", cigar.QBegin+1, cigar.QEnd+1, cigar.TBegin+1, cigar.TEnd+1)

@@ -114,7 +114,7 @@ var poolOffsets = &sync.Pool{New: func() interface{} {
 // initComponent inilializes a new WFA component.
 func (algn *Aligner) initComponent(M *[]*[]uint32, lenQ, lenT int) {
 	offsets := poolOffsets.Get().(*[]uint32)
-	*offsets = append(*offsets, 0)
+	// *offsets = append(*offsets, 0)
 	*M = append(*M, offsets)
 }
 
@@ -155,11 +155,10 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	var wfaType uint32
 	// set the wfa type
 	if (*q)[0] == (*t)[0] {
-		wfaType = wfaMatch
+		setOffsetUpdate(algn.M[0], 0, wfaMatch)
 	} else {
-		wfaType = wfaMismatch
+		setOffset2(&algn.M, algn.p.Mismatch, 0, (1<<wfaTypeBits)|wfaMismatch)
 	}
-	setOffsetUpdate(algn.M[0], 0, wfaType)
 
 	if !algn.opt.GlobalAlignment {
 		for k := 1; k < m; k++ {
@@ -168,7 +167,7 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 			} else {
 				wfaType = wfaMismatch
 			}
-			setOffset2(&algn.M, 0, k, uint32(k)<<wfaTypeBits|wfaType)
+			setOffset2(&algn.M, 0, k, (uint32(k)<<wfaTypeBits)|wfaType)
 		}
 		for k := 1; k < n; k++ {
 			if (*q)[k] == (*t)[0] {
@@ -195,7 +194,6 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 		if (*M)[s] != nil {
 			// fmt.Printf("extend:\n")
 			algn.extend((*M)[s], q, t, s)
-
 			// fmt.Printf("max offset: %d, Aoffset: %d\n", (*(*M)[s])[Ak], Aoffset)
 
 			offset, _ = getOffset((*M)[s], Ak)
@@ -368,7 +366,7 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 			updatedI = true
 			setOffset2(I, s, k, Isk<<wfaTypeBits|wfaTypeI)
-			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
+			// fmt.Printf("  %d fromM:%v(%d), fromI:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Isk, fromM, v1, fromI, v2, s, k, Isk, wfaType2str(wfaTypeI))
 		}
 
@@ -465,7 +463,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 	var ok bool
 	var k, h, v int
 	var offset, wfaType uint32
-	fmt.Printf("backtrace from M%d,%d:\n", s, Ak)
+	// fmt.Printf("backtrace from M%d,%d:\n", s, Ak)
 
 	k = Ak
 	var op byte
@@ -477,17 +475,16 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 LOOP:
 	for {
 		if handlePre {
-			// if wfaTypePre == wfaDeleteExt || wfaTypePre == wfaInsertExt {
-			// }
 			op = wfaOps[wfaTypePre]
 			cigar.AddN(op, 1)
-			fmt.Printf("  addPre a. type: %s, op: %c, n=%d, h: %d, v: %d\n",
-				wfaType2str(wfaTypePre), op, 1, h+1, v+1)
+			// fmt.Printf("  addPre a. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
 		}
 
 		offset, ok = getOffset((*M)[s], k)
 		if !ok {
-			fmt.Printf("  break as there's no offset\n")
+			v = h - k
+			// fmt.Printf("  break as there's no offset\n")
 			break
 		}
 		if first {
@@ -495,7 +492,7 @@ LOOP:
 		}
 		v = h - k
 		if v < 0 || h < 0 {
-			fmt.Printf("  break as v(%d) < 0 || h(%d) < 0\n", h, v)
+			// fmt.Printf("  break as v(%d) < 0 || h(%d) < 0\n", h, v)
 			break
 		}
 		if first {
@@ -503,7 +500,7 @@ LOOP:
 			cigar.TEnd, cigar.QEnd = h, v
 		}
 
-		fmt.Printf(" s: %d, k: %d, type: %s h: %d, v: %d\n", s, k, wfaType2str(wfaMatch), h+1, v+1)
+		// fmt.Printf(" s: %d, k: %d, type: %s h: %d, v: %d\n", s, k, wfaType2str(wfaMatch), h+1, v+1)
 
 		wfaType = offset & wfaTypeMask
 		op = wfaOps[wfaType] // set op temporally
@@ -512,11 +509,11 @@ LOOP:
 
 		backTraceMat = wfaTypePre == 0 || (wfaTypePre != wfaInsertExt && wfaTypePre != wfaDeleteExt)
 		if backTraceMat {
-			fmt.Printf("  back trace from h: %d, v: %d\n", h+1, v+1)
+			// fmt.Printf("  back trace from h: %d, v: %d\n", h+1, v+1)
 			for (*q)[v] == (*t)[h] {
 				n++
 
-				fmt.Printf("    back trace to h: %d, v: %d\n", h+1, v+1)
+				// fmt.Printf("    back trace to h: %d, v: %d\n", h+1, v+1)
 				v--
 				h--
 				if v < 0 || h < 0 {
@@ -530,19 +527,19 @@ LOOP:
 			op = wfaOps[wfaMatch] // correct it as M
 			cigar.AddN(op, n)
 
-			if backTraceMat {
-				fmt.Printf("  addMul with corr after backTraceMat. type: %s, op: %c, n=%d, h: %d, v: %d\n",
-					wfaType2str(wfaMatch), op, n, h+2, v+2)
-			} else {
-				fmt.Printf("  addMul with corr. type: %s, op: %c, n=%d, h: %d, v: %d\n",
-					wfaType2str(wfaMatch), op, n, h+1, v+1)
-			}
+			// if backTraceMat {
+			// 	fmt.Printf("  addMul with corr after backTraceMat. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 		wfaType2str(wfaMatch), op, n, h+2, v+2)
+			// } else {
+			// 	fmt.Printf("  addMul with corr. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 		wfaType2str(wfaMatch), op, n, h+1, v+1)
+			// }
 			handlePre = true
 		} else {
 			cigar.AddN(op, 1)
 			handlePre = false
-			fmt.Printf("  addSig. type: %s, op: %c, n=%d, h: %d, v: %d\n",
-				wfaType2str(wfaType), op, 1, h+1, v+1)
+			// fmt.Printf("  addSig. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+			// 	wfaType2str(wfaType), op, 1, h+1, v+1)
 		}
 		wfaTypePre = wfaType
 
@@ -565,18 +562,18 @@ LOOP:
 			h--
 			s -= p.Mismatch
 		default:
-			fmt.Printf("  break as invalid wfa type\n")
+			// fmt.Printf("  break as invalid wfa type\n")
 			break LOOP
 		}
 
-		fmt.Printf("  new s: %d, k: %d\n", s, k)
+		// fmt.Printf("  new s: %d, k: %d\n", s, k)
 	}
 
 	if handlePre && h >= 0 && v >= 0 { // not the record for inialization
 		op = wfaOps[wfaTypePre]
 		cigar.AddN(op, 1)
-		fmt.Printf("  addPre b. type: %s, op: %c, n=%d, h: %d, v: %d\n",
-			wfaType2str(wfaTypePre), op, 1, h+1, v+1)
+		// fmt.Printf("  addPre b. type: %s, op: %c, n=%d, h: %d, v: %d\n",
+		// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
 	}
 
 	cigar.TBegin, cigar.QBegin = h+1, v+1

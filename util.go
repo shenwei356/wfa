@@ -234,15 +234,16 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 	var offset uint32
 	var wfaType uint32
 	var v, h int
-	// var vp, hp int
-	lenQ := len(*q)
-	lenT := len(*t)
+	I := &algn.I
+	D := &algn.D
+	var fromD, fromI, backTraceMat bool
+	var offsetID uint32
+	var n, vp, hp, v0, h0 int
 	for s, offsets := range M {
 		if offsets == nil {
 			continue
 		}
-		fmt.Printf("s: %d\n", s)
-		// wfaTypePre = 0
+		// fmt.Printf("s: %d\n", s)
 		for _k, offset = range *offsets { // k:  0, -1 , 1, -2, 2
 			if offset == 0 {
 				continue
@@ -254,39 +255,93 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			} else { // 1, 2
 				k = _k >> 1
 			}
-			fmt.Printf("  fill _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
+			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
 
 			wfaType = offset & wfaTypeMask
-			if isM {
-				for h = int(offset>>wfaTypeBits) - 1; h >= 0; h-- { // yes, in reverse order
-					fmt.Printf("    h:%d, v:%d\n", h, h-k)
-					v = h - k
-					if v < 0 || v >= lenQ || h >= lenT {
-						break
-					}
+			h = int(offset>>wfaTypeBits) - 1
+			v = h - k
 
-					if (*(*m)[v])[h] < 0 { // only set unsetted
-						(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
-						// set the type as match.
-						// fmt.Printf("     set h:%d, v:%d as s:%d\n", h+1, v+1, s)
-						// (*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch)
-						// vp, hp = v, h
-					}
+			// fmt.Printf("   v: %d, h: %d\n", v, h)
+			if v < 0 || h < 0 || v >= len(*m) || h >= len(*(*m)[v]) {
+				continue
+			}
 
-					if (*q)[v] != (*t)[h] {
-						break
+			if (*(*m)[v])[h] >= 0 { // recorded with a lower score.
+				continue
+			}
+
+			// fmt.Printf("    fill h:%d, v:%d\n", h+1, v+1)
+			(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+
+			if !isM || (*q)[v] != (*t)[h] {
+				continue
+			}
+
+			switch wfaType {
+			case wfaInsertOpen, wfaInsertExt, wfaDeleteOpen, wfaDeleteExt:
+				backTraceMat = false
+				offsetID, fromI = getOffset2(I, uint32(s), 0, k)
+				// fmt.Printf("    test I: %v, s: %d, offset: %d\n", fromI, s, offsetID>>wfaTypeBits)
+				if fromI {
+					backTraceMat = true
+					offsetID = offsetID >> wfaTypeBits
+				} else {
+					offsetID, fromD = getOffset2(D, uint32(s), 0, k)
+					// fmt.Printf("    test D: %v, s: %d, offset: %d\n", fromD, s, offsetID>>wfaTypeBits)
+					if fromD {
+						backTraceMat = true
+						offsetID = offsetID >> wfaTypeBits
 					}
 				}
-				// set the first one with the original type
-				// fmt.Printf("     change back h:%d, v:%d as s:%d\n", h+1, v+1, s)
-				// (*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType)
-			} else {
-				h = int(offset>>wfaTypeBits) - 1
-				v = h - k
-				if v >= 0 && v < len(*m) && h < len(*(*m)[v]) {
-					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+				backTraceMat = fromD || fromI
+			default:
+				backTraceMat = true
+			}
+
+			// fmt.Printf("    backTraceMat: %v, offsetID: %d\n", backTraceMat, offsetID)
+			if !backTraceMat {
+				continue
+			}
+
+			// change it to match
+			v0, h0 = v, h
+			(*(*m)[v0])[h0] = int32(s)<<wfaTypeBits | int32(wfaMatch)
+
+			n = 0
+			for {
+				h--
+				v--
+				if v < 0 || h < 0 {
+					break
+				}
+
+				if fromI {
+					// fmt.Printf("    check I: %d, %d\n", h, int(offsetID)-1)
+					if h < int(offsetID)-1 {
+						break
+					}
+				} else if v < int(offsetID)-1-k {
+					// fmt.Printf("    check D: %d, %d\n", v, int(offsetID)-1)
+					break
+				}
+				n++
+				if (*(*m)[v])[h] >= 0 {
+					continue
+				}
+
+				// (*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+				(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
+				vp, hp = v, h
+
+				if (*q)[v] != (*t)[h] {
+					break
 				}
 			}
+
+			if n == 0 {
+				vp, hp = v0, h0
+			}
+			(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
 		}
 	}
 
