@@ -215,30 +215,31 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	lastK := Ak
 	minS := s
 
-	// TODO: need to check more
 	// we might store it during extending and nexting.
-	// if !algn.opt.GlobalAlignment { // find the minimum score on the last line
-	// 	var ok bool
-	// 	var k int
-	// 	var atTheLastLine bool
-	// 	for _s := s; _s > 0; _s-- {
-	// 		atTheLastLine = false
-	// 		for k = -m; k <= m; k++ {
-	// 			offset, ok = getOffset2(M, _s, 0, k)
-	// 			// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-	// 			if ok && int(offset>>wfaTypeBits)-k == n {
-	// 				// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-	// 				atTheLastLine = true
-	// 				break
-	// 			}
-	// 		}
+	if !algn.opt.GlobalAlignment { // find the minimum score on the last line
+		var ok bool
+		var k int
+		var atTheLastLine bool
+		var _offset int
+		for _s := s; _s > 0; _s-- {
+			atTheLastLine = false
+			for k = -m; k <= m; k++ {
+				offset, ok = getOffset2(M, _s, 0, k)
+				_offset = int(offset >> wfaTypeBits)
+				// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+				if ok && _offset >= n && _offset-k == n {
+					// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+					atTheLastLine = true
+					break
+				}
+			}
 
-	// 		if atTheLastLine && _s < minS {
-	// 			lastK = k
-	// 			minS = _s
-	// 		}
-	// 	}
-	// }
+			if atTheLastLine && _s < minS {
+				lastK = k
+				minS = _s
+			}
+		}
+	}
 	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
 
 	return algn.backTrace(q, t, minS, lastK), nil

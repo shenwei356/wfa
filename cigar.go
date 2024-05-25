@@ -61,7 +61,7 @@ func (cigar *CIGAR) reset() {
 	cigar.proccessed = false
 }
 
-// RecycleCIGAR recycle a CIGAR object.
+// RecycleCIGAR recycles a CIGAR object.
 func RecycleCIGAR(cigar *CIGAR) {
 	if cigar != nil {
 		poolCIGAR.Put(cigar)
@@ -241,6 +241,7 @@ var poolBytes = &sync.Pool{New: func() interface{} {
 	return &buf
 }}
 
+// RecycleAlignment recycle alignment strings
 func RecycleAlignment(Q, A, T *[]byte) {
 	*Q = (*Q)[:0]
 	*A = (*A)[:0]

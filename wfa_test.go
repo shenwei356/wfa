@@ -37,16 +37,19 @@ func TestWFA(_t *testing.T) {
 	// t := []byte("GAGATA")
 
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
-	// q := []byte("ACCATACTCG")
-	// t := []byte("AGGATGCTCG")
+	q := []byte("ACCATACTCG")
+	t := []byte("AGGATGCTCG")
+
+	// q := []byte("ACGATCTCG")
+	// t := []byte("CAGGCTCCTCGG")
 
 	// from https://github.com/smarco/WFA2-lib
 	//    PATTERN    AGCTA-GTGTCAATGGCTACT---TTTCAGGTCCT
 	//               | ||| |||||  ||||||||   | |||||||||
 	//    TEXT       AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT
 	//    ALIGNMENT  1M1X3M1I5M2X8M3I1M1X9M
-	q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
-	t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
+	// q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
+	// t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
 
 	q = bytes.ToUpper(q)
 	t = bytes.ToUpper(t)
@@ -56,9 +59,7 @@ func TestWFA(_t *testing.T) {
 		return
 	}
 
-	// wtr := os.Stdout
-
-	fmt.Printf("\n---------------- M ----------------\n")
+	// fmt.Printf("\n---------------- M ----------------\n")
 	// PrintComponent(os.Stdout, algn.M, "M")
 	algn.Plot(&q, &t, os.Stdout, algn.M, true)
 
