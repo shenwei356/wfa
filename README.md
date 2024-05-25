@@ -15,6 +15,8 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
             index: 0,  1,  2,  3,  4,  5,  6
             k:     0, -1,  1, -2,  2, -3,  3
 
+      Value `0` means the `k` does not exist.
+
     - Offsets are saved with `uint32` integers, with the lower 3 bits for
       saving 5 possible paths which are used for backrace.
 
