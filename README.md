@@ -28,7 +28,6 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
             wfaMatch // only for backtrace, not saved in the component
 
 - Maximum sequence length: `536,870,911` (1<<(32-3) - 1)
-- Len(query) <= Len(target).
 - All objects are saved in object pool for computation efficiency.
   Just don't forget to recycle them.
 

@@ -197,8 +197,10 @@ func (algn *Aligner) initComponent(M *[]*[]uint32) {
 // ErrEmptySeq means one of the query or target sequence is empty
 var ErrEmptySeq error = fmt.Errorf("wfa: invalid empty sequence")
 
-// ErrLens means query seq is longer than target seq
-var ErrLens error = fmt.Errorf("wfa: query seq longer than target seq")
+// MaxSeqLen is the allowed longest sequence length
+const MaxSeqLen int = 1<<(32-wfaTypeBits) - 1
+
+var ErrSeqTooLong error = fmt.Errorf("wfa: sequences longer than %d are not supported", MaxSeqLen)
 
 // Align performs alignment for two sequence.
 // The length of q should be <= that of t.
@@ -208,8 +210,8 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	if n == 0 || m == 0 {
 		return nil, ErrEmptySeq
 	}
-	if n > m {
-		return nil, ErrLens
+	if n > MaxSeqLen || m > MaxSeqLen {
+		return nil, ErrSeqTooLong
 	}
 
 	algn.initComponents(q, t)
@@ -254,27 +256,33 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	M := &algn.M
 	m, n := len(*t), len(*q)
 	minS := s
+	Ak := max(m-n, n-m)
 
 	var offset uint32
 	var ok bool
 	var k int
-	var atTheLastLine bool
-	var _offset int
+	var lastRowOrCol bool
 	var lastK int
+	var h, v int
 	for _s := s; _s > 0; _s-- {
-		atTheLastLine = false
-		for k = -m; k <= m; k++ {
+		lastRowOrCol = false
+
+		for k = -Ak; k <= Ak; k++ {
 			offset, ok = getOffset2(M, _s, 0, k)
-			_offset = int(offset >> wfaTypeBits)
+			if !ok {
+				continue
+			}
+			h = int(offset >> wfaTypeBits)
+			v = h - k
 			// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-			if ok && _offset >= n && _offset-k == n {
+			if (v == n && h >= n) || (h == m && v >= m) {
 				// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-				atTheLastLine = true
+				lastRowOrCol = true
 				break
 			}
 		}
 
-		if atTheLastLine && _s < minS {
+		if lastRowOrCol && _s < minS {
 			lastK = k
 			minS = _s
 		}
@@ -451,9 +459,10 @@ const (
 	wfaDeleteExt
 	wfaMismatch
 	wfaMatch // only for backtrace, not saved in the component
+	wfaClip  // only for CIGAR
 )
 
-var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M'}
+var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'}
 var wfaArrows []rune = []rune{'⊕', '⟼', '🠦', '↧', '🠧', '⬂', '⬊'} // ⬂
 
 func wfaType2str(t uint32) string {
@@ -627,6 +636,8 @@ func (algn *Aligner) next(s uint32) {
 func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 	M := &algn.M
 	p := algn.p
+	lenQ := len(*q)
+	lenT := len(*t)
 	cigar := NewCIGAR()
 	var ok bool
 	var k, h, v int
@@ -657,9 +668,16 @@ LOOP:
 		}
 		if first {
 			h = int(offset>>wfaTypeBits) - 1 // the offset might be extended
+			v = h - k
+			if h < lenT-1 {
+				cigar.AddN(wfaOps[wfaInsertOpen], uint32(lenT)-uint32(h)-1)
+			} else if v < lenQ-1 {
+				cigar.AddN(wfaOps[wfaClip], uint32(lenQ)-uint32(v)-1)
+			}
+		} else {
+			v = h - k
 		}
-		v = h - k
-		if v < 0 || h < 0 {
+		if v < 0 || h < 0 || v >= lenQ || h >= lenT {
 			// fmt.Printf("  break as v(%d) < 0 || h(%d) < 0\n", h, v)
 			break
 		}
@@ -742,6 +760,14 @@ LOOP:
 		cigar.AddN(op, 1)
 		// fmt.Printf("  addPre b. type: %s, op: %c, n=%d, h: %d, v: %d\n",
 		// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
+	}
+
+	if v >= 0 {
+		cigar.AddN(wfaOps[wfaClip], uint32(v+1))
+	}
+
+	if h >= 0 {
+		cigar.AddN(wfaOps[wfaInsertOpen], uint32(h+1))
 	}
 
 	cigar.TBegin, cigar.QBegin = h+1, v+1

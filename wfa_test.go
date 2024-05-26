@@ -29,7 +29,7 @@ import (
 
 func TestWFA(_t *testing.T) {
 	algn := New(DefaultPenalties, &Options{
-		GlobalAlignment: true,
+		GlobalAlignment: false,
 	})
 	algn.AdaptiveReduction(&AdaptiveReductionOption{
 		MinWFLen:    10,
@@ -42,15 +42,15 @@ func TestWFA(_t *testing.T) {
 	// t := []byte("GAGATA")
 
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
-	q := []byte("ACCATACTCG")
-	t := []byte("AGGATGCTCG")
-
 	// q := []byte("ACCATACTCG")
-	// t := []byte("ACCATGCTCG")
+	// t := []byte("AGGATGCTCG")
+
+	// q := []byte("ccccccccccccccccccccccaACCATACTCGaaaaaaaaaaaaaaaaaaaaa")
+	// t := []byte("AGGATGCTCG")
 
 	// demo in readme
-	// q := []byte("ACGATCTCG")
-	// t := []byte("CAGGCTCCTCGG")
+	q := []byte("ACGATCTCG")
+	t := []byte("CAGGCTCCTCGG")
 
 	// from https://aacbb-workshop.github.io/slides/2022/WFA.ISCA.v6.pdf page15.
 	// q := []byte("TCTTTACTCGCGCGTTGGAGAAATACAATAGT")

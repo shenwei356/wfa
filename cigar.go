@@ -30,8 +30,8 @@ import (
 type CIGAR struct {
 	Ops []*CIGARRecord
 
-	TBegin, TEnd int // 0-based location of the alignment in target seq
-	QBegin, QEnd int // 0-based location of the alignment in query seq
+	TBegin, TEnd int // 0-based location of the alignment in target seq, not including clipping sequences.
+	QBegin, QEnd int // 0-based location of the alignment in query seq, not including clipping sequences.
 
 	Score uint32
 
@@ -171,18 +171,10 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 	A := poolBytes.Get().(*[]byte)
 	T := poolBytes.Get().(*[]byte)
 
-	var n, h, v int
+	// var n int
+	var h, v int
 
-	// begining
-	n = cigar.TBegin
-	for h = 0; h < n; h++ {
-		*Q = append(*Q, '-')
-		*A = append(*A, ' ')
-		*T = append(*T, (*t)[h])
-	}
-
-	// center
-	v, h = cigar.QBegin, cigar.TBegin
+	v, h = 0, 0
 	var i uint32
 	for _, op := range cigar.Ops {
 		switch op.Op {
@@ -209,7 +201,7 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 				*T = append(*T, (*t)[h])
 				h++
 			}
-		case 'D':
+		case 'D', 'H':
 			for i = 0; i < op.N; i++ {
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, ' ')
@@ -217,14 +209,6 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 				v++
 			}
 		}
-	}
-
-	// ending
-	n = len(*t)
-	for h = cigar.TEnd + 1; h < n; h++ {
-		*Q = append(*Q, '-')
-		*A = append(*A, ' ')
-		*T = append(*T, (*t)[h])
 	}
 
 	return Q, A, T
