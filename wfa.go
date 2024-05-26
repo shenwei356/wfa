@@ -21,7 +21,9 @@
 package wfa
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math/bits"
 	"sync"
 )
 
@@ -157,7 +159,7 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	var wfaType uint32
 	// have to check the first bases
 	if (*q)[0] == (*t)[0] { // M[0,0] = 0
-		setOffsetUpdate(algn.M[0], 0, wfaMatch)
+		setOffsetUpdate(algn.M[0], 0, (1<<wfaTypeBits)|wfaMatch)
 	} else { // M[0,0] = 4
 		setOffset2(&algn.M, algn.p.Mismatch, 0, (1<<wfaTypeBits)|wfaMismatch)
 	}
@@ -209,7 +211,7 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 		s++
 
 		// fmt.Printf("next:\n")
-		algn.next(q, t, s)
+		algn.next(s)
 	}
 
 	lastK := Ak
@@ -245,6 +247,8 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	return algn.backTrace(q, t, minS, lastK), nil
 }
 
+var be = binary.BigEndian
+
 // extend refers to the WF_EXTEND method.
 // The return bool value indicates whether the end of one sequence is reached.
 func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
@@ -255,6 +259,8 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 	var v, h int
 	lenQ := len(*q)
 	lenT := len(*t)
+	var q8, t8 uint64
+	var n, N int
 
 	// processing in revsere order, just to reduce the append operations in setOffsetUpdate,
 	// where offsets of k are saved like this:
@@ -277,16 +283,41 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 			continue
 		}
 
+		// offset is 1-based, here it's checking the base in the next position.
+
+		// compare every 8 bases, convert 8 bases to a uint64, xor them and count leading zeroes.
+		if v+8 <= lenQ && h+8 <= lenT {
+			N = 0
+			// fmt.Printf("      block wise, start from: h: %d, v: %d\n", h, v)
+			for {
+				q8, t8 = be.Uint64((*q)[v:v+8]), be.Uint64((*t)[h:h+8])
+				n = bits.LeadingZeros64(q8^t8) >> 3 // divide 8
+				v += n
+				h += n
+				N += n
+				if n < 8 || v+8 >= lenQ || h+8 >= lenT {
+					break
+				}
+			}
+			// fmt.Printf("        block wise, %d matches\n", N)
+			setOffsetUpdate(offsets, k, uint32(N)<<wfaTypeBits)
+			continue
+		}
+
+		// compare each base
+
+		N = 0
 		for (*q)[v] == (*t)[h] {
-			setOffsetUpdate(offsets, k, 1<<wfaTypeBits)
 			v++
 			h++
-			// fmt.Printf("      k: %d, extend to h: %d, v: %d\n", k, h, v)
+			N++
 
 			if v == lenQ || h == lenT {
 				break
 			}
 		}
+		// fmt.Printf("      byte wise: k: %d, extend to h: %d, v: %d\n", k, h, v)
+		setOffsetUpdate(offsets, k, uint32(N)<<wfaTypeBits)
 	}
 }
 
@@ -327,7 +358,7 @@ const wfaTypeBits uint32 = 3
 const wfaTypeMask uint32 = (1 << wfaTypeBits) - 1
 
 // next refers to the WF_NEXT method.
-func (algn *Aligner) next(q, t *[]byte, s uint32) {
+func (algn *Aligner) next(s uint32) {
 	M := &algn.M
 	I := &algn.I
 	D := &algn.D
