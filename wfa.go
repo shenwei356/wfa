@@ -459,7 +459,6 @@ const (
 	wfaDeleteExt
 	wfaMismatch
 	wfaMatch // only for backtrace, not saved in the component
-	wfaClip  // only for CIGAR
 )
 
 var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'}
@@ -672,7 +671,7 @@ LOOP:
 			if h < lenT-1 {
 				cigar.AddN(wfaOps[wfaInsertOpen], uint32(lenT)-uint32(h)-1)
 			} else if v < lenQ-1 {
-				cigar.AddN(wfaOps[wfaClip], uint32(lenQ)-uint32(v)-1)
+				cigar.AddN('H', uint32(lenQ)-uint32(v)-1)
 			}
 		} else {
 			v = h - k
@@ -763,7 +762,7 @@ LOOP:
 	}
 
 	if v >= 0 {
-		cigar.AddN(wfaOps[wfaClip], uint32(v+1))
+		cigar.AddN('H', uint32(v+1))
 	}
 
 	if h >= 0 {
