@@ -301,7 +301,11 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 			}
 			// fmt.Printf("        block wise, %d matches\n", N)
 			setOffsetUpdate(offsets, k, uint32(N)<<wfaTypeBits)
-			continue
+
+			if !(n == 8 && v < lenQ && h < lenT) {
+				continue
+			}
+			// fmt.Printf("         need to check left ------------------------------ \n")
 		}
 
 		// compare each base
