@@ -23,6 +23,7 @@ package wfa
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/bits"
 	"sync"
 )
@@ -41,6 +42,22 @@ var DefaultPenalties = &Penalties{
 	GapExt:   2,
 }
 
+// AdaptiveReductionOption contains the parameters for adaptive reduction
+type AdaptiveReductionOption struct {
+	MinWFLen    uint32
+	MaxDistDiff uint32
+	CutoffStep  uint32
+}
+
+// attributes.heuristic.min_wavefront_length = 10;
+// attributes.heuristic.max_distance_threshold = 50;
+// attributes.heuristic.steps_between_cutoffs = 1;
+var DefaultAdaptiveOption = &AdaptiveReductionOption{
+	MinWFLen:    10,
+	MaxDistDiff: 50,
+	CutoffStep:  1,
+}
+
 // Options represents a list of options
 type Options struct {
 	GlobalAlignment bool
@@ -56,6 +73,8 @@ var DefaultOptions = &Options{
 // And it's from a object pool, in case a large number of alignment are needed.
 type Aligner struct {
 	p *Penalties
+
+	ad *AdaptiveReductionOption
 
 	opt *Options
 
@@ -100,59 +119,21 @@ func New(p *Penalties, opt *Options) *Aligner {
 	return algn
 }
 
-// reset resets the internal data before each alignment.
-func (algn *Aligner) reset() {
-	algn.resetComponent(&algn.M)
-	algn.resetComponent(&algn.I)
-	algn.resetComponent(&algn.D)
-}
-
-// poolOffsets is a object pool for offsets.
-var poolOffsets = &sync.Pool{New: func() interface{} {
-	tmp := make([]uint32, 0, 128)
-	return &tmp
-}}
-
-// initComponent inilializes a new WFA component.
-func (algn *Aligner) initComponent(M *[]*[]uint32) {
-	offsets := poolOffsets.Get().(*[]uint32)
-	// *offsets = append(*offsets, 0)
-	*M = append(*M, offsets)
-}
-
-// resetComponent resets a WFA component (a list of offsets).
-func (algn *Aligner) resetComponent(M *[]*[]uint32) {
-	for _, v := range *M {
-		if v != nil {
-			*v = (*v)[:0]
-			poolOffsets.Put(v)
-		}
+// AdaptiveReduction sets the adaptive reduction parameters
+func (algn *Aligner) AdaptiveReduction(ad *AdaptiveReductionOption) error {
+	if ad.MinWFLen == 0 {
+		return fmt.Errorf("cutoff step should not be 0")
 	}
-	*M = (*M)[:0]
+	algn.ad = ad
+	return nil
 }
 
-// ErrEmptySeq means one of the query or target sequence is empty
-var ErrEmptySeq error = fmt.Errorf("wfa: invalid empty sequence")
-
-// ErrLens means query seq is longer than target seq
-var ErrLens error = fmt.Errorf("wfa: query seq longer than target seq")
-
-// Align performs alignment for two sequence.
-// The length of q should be <= that of t.
-func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
+// initComponents resets the internal data before each alignment.
+func (algn *Aligner) initComponents(q, t *[]byte) {
 	m, n := len(*t), len(*q)
 
-	if n == 0 || m == 0 {
-		return nil, ErrEmptySeq
-	}
-	if n > m {
-		return nil, ErrLens
-	}
-
-	// reset the stats
-	algn.reset()
-
 	// -------------------------------------------------
+	// M
 
 	algn.initComponent(&algn.M) // M[0,0] = 0
 
@@ -183,8 +164,55 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 		}
 	}
 
+	// -------------------------------------------------
+	// I and D
+
 	algn.initComponent(&algn.I)
 	algn.initComponent(&algn.D)
+}
+
+// poolOffsets is a object pool for offsets.
+var poolOffsets = &sync.Pool{New: func() interface{} {
+	tmp := make([]uint32, 0, 128)
+	return &tmp
+}}
+
+// initComponent inilializes a new WFA component.
+func (algn *Aligner) initComponent(M *[]*[]uint32) {
+	// resets a WFA component (a list of offsets).
+	for _, v := range *M {
+		if v != nil {
+			*v = (*v)[:0]
+			poolOffsets.Put(v)
+		}
+	}
+	*M = (*M)[:0]
+
+	// inilializes
+	offsets := poolOffsets.Get().(*[]uint32)
+	// *offsets = append(*offsets, 0)
+	*M = append(*M, offsets)
+}
+
+// ErrEmptySeq means one of the query or target sequence is empty
+var ErrEmptySeq error = fmt.Errorf("wfa: invalid empty sequence")
+
+// ErrLens means query seq is longer than target seq
+var ErrLens error = fmt.Errorf("wfa: query seq longer than target seq")
+
+// Align performs alignment for two sequence.
+// The length of q should be <= that of t.
+func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
+	m, n := len(*t), len(*q)
+
+	if n == 0 || m == 0 {
+		return nil, ErrEmptySeq
+	}
+	if n > m {
+		return nil, ErrLens
+	}
+
+	algn.initComponents(q, t)
 
 	// -------------------------------------------------
 
@@ -209,42 +237,50 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 		}
 
 		s++
-
 		// fmt.Printf("next:\n")
 		algn.next(s)
 	}
 
-	lastK := Ak
-	minS := s
-
-	// we might store it during extending and nexting.
+	minS, lastK := s, Ak
 	if !algn.opt.GlobalAlignment { // find the minimum score on the last line
-		var ok bool
-		var k int
-		var atTheLastLine bool
-		var _offset int
-		for _s := s; _s > 0; _s-- {
-			atTheLastLine = false
-			for k = -m; k <= m; k++ {
-				offset, ok = getOffset2(M, _s, 0, k)
-				_offset = int(offset >> wfaTypeBits)
-				// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-				if ok && _offset >= n && _offset-k == n {
-					// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
-					atTheLastLine = true
-					break
-				}
-			}
-
-			if atTheLastLine && _s < minS {
-				lastK = k
-				minS = _s
-			}
-		}
+		minS, lastK = algn.backtraceStartPosistion(q, t, s)
 	}
 	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
 
 	return algn.backTrace(q, t, minS, lastK), nil
+}
+
+func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, int) {
+	M := &algn.M
+	m, n := len(*t), len(*q)
+	minS := s
+
+	var offset uint32
+	var ok bool
+	var k int
+	var atTheLastLine bool
+	var _offset int
+	var lastK int
+	for _s := s; _s > 0; _s-- {
+		atTheLastLine = false
+		for k = -m; k <= m; k++ {
+			offset, ok = getOffset2(M, _s, 0, k)
+			_offset = int(offset >> wfaTypeBits)
+			// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+			if ok && _offset >= n && _offset-k == n {
+				// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+				atTheLastLine = true
+				break
+			}
+		}
+
+		if atTheLastLine && _s < minS {
+			lastK = k
+			minS = _s
+		}
+	}
+
+	return minS, lastK
 }
 
 var be = binary.BigEndian
@@ -276,10 +312,7 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 
 		h = int(offset >> wfaTypeBits) // x
 		v = h - k                      // y
-		if v < 0 {
-			continue
-		}
-		if v >= lenQ || h >= lenT {
+		if v < 0 || v >= lenQ || h >= lenT {
 			continue
 		}
 
@@ -323,7 +356,92 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 		// fmt.Printf("      byte wise: k: %d, extend to h: %d, v: %d\n", k, h, v)
 		setOffsetUpdate(offsets, k, uint32(N)<<wfaTypeBits)
 	}
+
+	// -------------------------------------------------------------
+	// adaptive reduce
+
+	if algn.ad == nil || hi-lo+1 < int(algn.ad.MaxDistDiff) {
+		return
+	}
+
+	// fmt.Printf("  lo: %d, hi: %d, offsets: %d\n", lo, hi, *offsets)
+	var d, minDist int
+	// var minDistK int
+	ds := poolDist.Get().(*[]int)
+	*ds = (*ds)[:0]
+	minDist = math.MaxInt
+	for k := lo; k < hi; k++ { // must in normal order, cause we apppend d later
+		offset, ok = getOffset(offsets, k)
+		if s > 0 && !ok {
+			*ds = append(*ds, -1)
+			continue
+		}
+
+		h = int(offset >> wfaTypeBits) // x
+		v = h - k                      // y
+		if v < 0 || v >= lenQ || h >= lenT {
+			continue
+		}
+
+		d = max(lenT-h, lenQ-v)
+		*ds = append(*ds, d)
+
+		if d < minDist {
+			minDist = d
+			// minDistK = k
+		}
+	}
+	// offset, _ = getOffset(offsets, minDistK)
+	// fmt.Printf("    minD: %d, from k: %d (offset: %d, %d), ds: %d\n", minDist, minDistK, offset, offset>>wfaTypeBits, *ds)
+
+	_lo := lo
+	_hi := hi
+	maxDistDiff := int(algn.ad.MaxDistDiff)
+	updateLo := true
+	I := &algn.I
+	D := &algn.D
+	for i, d := range *ds {
+		if d < 0 {
+			continue
+		}
+		if d-minDist > maxDistDiff {
+			if updateLo {
+				_lo = lo + i + 1
+				// fmt.Printf("    new lo: %d, i:%d/%d\n", _lo, i, len(*ds))
+			}
+			(*ds)[i] = -1 // mark it
+			// fmt.Printf("    mark k: %d to delete\n", lo+i)
+		} else {
+			updateLo = false
+		}
+	}
+	for i := len(*ds) - 1; i >= 0; i-- {
+		if (*ds)[i] >= 0 {
+			_hi = lo + i
+			// fmt.Printf("    new hi: %d, i:%d\n", _hi, i)
+			break
+		}
+	}
+
+	for k := lo; k < _lo; k++ {
+		// fmt.Printf("    remove s: %d, k: %d\n", s, k)
+		removeOffset(offsets, k)
+		removeOffset((*I)[s], k)
+		removeOffset((*D)[s], k)
+	}
+	for k := _hi + 1; k <= hi; k++ {
+		// fmt.Printf("    remove s: %d, k: %d\n", s, k)
+		removeOffset(offsets, k)
+		removeOffset((*I)[s], k)
+		removeOffset((*D)[s], k)
+	}
+	// fmt.Printf("  new lo: %d, hi: %d, offsets: %d\n", _lo, _hi, *offsets)
 }
+
+var poolDist = &sync.Pool{New: func() interface{} {
+	tmp := make([]int, 0, 128)
+	return &tmp
+}}
 
 const (
 	// type of the 6 kinds of offsets, which will be saved as the lowest 3bits of the offset.

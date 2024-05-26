@@ -31,6 +31,11 @@ func TestWFA(_t *testing.T) {
 	algn := New(DefaultPenalties, &Options{
 		GlobalAlignment: true,
 	})
+	algn.AdaptiveReduction(&AdaptiveReductionOption{
+		MinWFLen:    10,
+		MaxDistDiff: 50,
+		CutoffStep:  1,
+	})
 
 	// from the paper Bioinformatics, 37(4), 2021, 456–463
 	// q := []byte("GATACA")
