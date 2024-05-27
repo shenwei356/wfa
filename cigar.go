@@ -28,12 +28,17 @@ import (
 
 // CIGAR represent a CIGAR structure.
 type CIGAR struct {
-	Ops []*CIGARRecord
+	Ops   []*CIGARRecord
+	Score uint32 // Alignment score
 
-	TBegin, TEnd int // 0-based location of the alignment in target seq, not including clipping sequences.
-	QBegin, QEnd int // 0-based location of the alignment in query seq, not including clipping sequences.
+	TBegin, TEnd int // 0-based location of the alignment in target seq, no including flanking clipping/insertion sequences
+	QBegin, QEnd int // 0-based location of the alignment in query seq, no including flanking clipping/insertion sequences
 
-	Score uint32
+	// Stats of the aligned region, no including flanking clipping/insertion sequences
+	AlignLen   uint32
+	Matches    uint32
+	Gaps       uint32
+	GapRegions uint32
 
 	proccessed bool
 }
@@ -59,6 +64,11 @@ func (cigar *CIGAR) reset() {
 	cigar.Ops = cigar.Ops[:0]
 	cigar.Score = 0
 	cigar.proccessed = false
+
+	cigar.AlignLen = 0
+	cigar.Matches = 0
+	cigar.Gaps = 0
+	cigar.GapRegions = 0
 }
 
 // RecycleCIGAR recycles a CIGAR object.
@@ -142,6 +152,42 @@ func (cigar *CIGAR) process() {
 	if j > 0 {
 		*s = (*s)[:j]
 	}
+
+	// count matches, gaps
+	var begin, end int
+	for i, op = range *s {
+		if op.Op == 'M' {
+			begin = i
+			break
+		}
+	}
+	for i = len(*s) - 1; i >= 0; i-- {
+		op = (*s)[i]
+		if op.Op == 'M' {
+			end = i
+			break
+		}
+	}
+	var alen uint32
+	var matches uint32
+	var gaps uint32
+	var gapRegions uint32
+
+	for i = begin; i <= end; i++ {
+		op = (*s)[i]
+		alen += op.N
+		switch op.Op {
+		case 'M':
+			matches += op.N
+		case 'I', 'D':
+			gaps += op.N
+			gapRegions++
+		}
+	}
+	cigar.AlignLen = alen
+	cigar.Matches = matches
+	cigar.Gaps = gaps
+	cigar.GapRegions = gapRegions
 
 	cigar.proccessed = true
 }

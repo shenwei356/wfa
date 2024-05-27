@@ -56,7 +56,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 	var v, h int
 	I := &algn.I
 	D := &algn.D
-	var fromD, fromI, backTraceMat bool
+	var fromD, fromI, fromID, backTraceMat bool
 	var offsetID uint32
 	var n, vp, hp, v0, h0 int
 	for s, offsets := range M {
@@ -97,24 +97,26 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 				continue
 			}
 
+			fromID = false
 			// for decide should we backtrace the matches
 			switch wfaType {
 			case wfaInsertOpen, wfaInsertExt, wfaDeleteOpen, wfaDeleteExt:
 				backTraceMat = false
-				offsetID, fromI = getOffset2(I, uint32(s), 0, k)
-				// fmt.Printf("    test I: %v, s: %d, offset: %d\n", fromI, s, offsetID>>wfaTypeBits)
+				offsetID, fromI, _ = getOffset2(I, uint32(s), 0, k)
+				// fmt.Printf("    test I: %v, s: %d, k: %d, offset: %d\n", fromI, s, k, offsetID>>wfaTypeBits)
 				if fromI {
 					backTraceMat = true
 					offsetID = offsetID >> wfaTypeBits
 				} else {
-					offsetID, fromD = getOffset2(D, uint32(s), 0, k)
-					// fmt.Printf("    test D: %v, s: %d, offset: %d\n", fromD, s, offsetID>>wfaTypeBits)
+					offsetID, fromD, _ = getOffset2(D, uint32(s), 0, k)
+					// fmt.Printf("    test D: %v, s: %d, %d, offset: %d\n", fromD, s, k, offsetID>>wfaTypeBits)
 					if fromD {
 						backTraceMat = true
 						offsetID = offsetID >> wfaTypeBits
 					}
 				}
 				backTraceMat = fromD || fromI
+				fromID = true
 			default:
 				backTraceMat = true
 			}
@@ -136,14 +138,16 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 					break
 				}
 
-				if fromI {
-					// fmt.Printf("    check I: %d, %d\n", h, int(offsetID)-1)
-					if h < int(offsetID)-1 {
+				if fromID {
+					if fromI {
+						// fmt.Printf("    check I: %d, %d\n", h, int(offsetID)-1)
+						if h < int(offsetID)-1 {
+							break
+						}
+					} else if v < int(offsetID)-1-k {
+						// fmt.Printf("    check D: %d, %d\n", v, int(offsetID)-1)
 						break
 					}
-				} else if v < int(offsetID)-1-k {
-					// fmt.Printf("    check D: %d, %d\n", v, int(offsetID)-1)
-					break
 				}
 
 				n++

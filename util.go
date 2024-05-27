@@ -150,33 +150,33 @@ func setOffset2(M *[]*[]uint32, s uint32, k int, offset uint32) {
 }
 
 // getOffset returns the offset of a k and if it exists.
-func getOffset(offsets *[]uint32, k int) (uint32, bool) {
+func getOffset(offsets *[]uint32, k int) (uint32, bool, bool) {
 	if offsets == nil {
-		return 0, false
+		return 0, false, false
 	}
 
 	if k == 0 {
 		if len(*offsets) < k+1 {
-			return 0, false
+			return 0, false, false
 		}
-		return (*offsets)[0], (*offsets)[0] > 0
+		return (*offsets)[0], (*offsets)[0] > 0, true
 	}
 
 	var i int
 	if k < 0 {
 		i = ((-k) << 1) - 1
 		if len(*offsets) < i+1 {
-			return 0, false
+			return 0, false, false
 		}
-		return (*offsets)[i], (*offsets)[i] > 0
+		return (*offsets)[i], (*offsets)[i] > 0, true
 	}
 
 	// k > 0
 	i = k << 1
 	if len(*offsets) < i+1 {
-		return 0, false
+		return 0, false, false
 	}
-	return (*offsets)[i], (*offsets)[i] > 0
+	return (*offsets)[i], (*offsets)[i] > 0, true
 }
 
 // removeOffset remove the offset of a k.
@@ -216,9 +216,9 @@ func removeOffset(offsets *[]uint32, k int) (uint32, bool) {
 }
 
 // getOffset2 is similar with getOffset.
-func getOffset2(M *[]*[]uint32, s uint32, d uint32, k int) (uint32, bool) {
+func getOffset2(M *[]*[]uint32, s uint32, d uint32, k int) (uint32, bool, bool) {
 	if M == nil || d > s {
-		return 0, false
+		return 0, false, false
 	}
 	s = s - d
 	return getOffset((*M)[s], k)

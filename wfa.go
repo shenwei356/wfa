@@ -225,16 +225,28 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	M := &algn.M
 
 	var s uint32
+	var lo, hi int
+	reduce := algn.ad != nil
+	var maxDistDiff int
+	if reduce {
+		maxDistDiff = int(algn.ad.MaxDistDiff)
+	}
 	for {
 		// fmt.Printf("---------------------- s: %-3d ----------------------\n", s)
 		if (*M)[s] != nil {
 			// fmt.Printf("extend:\n")
-			algn.extend((*M)[s], q, t, s)
+			lo, hi = algn.extend((*M)[s], q, t, s)
 			// fmt.Printf("max offset: %d, Aoffset: %d\n", (*(*M)[s])[Ak], Aoffset)
 
-			offset, _ = getOffset((*M)[s], Ak)
+			offset, _, _ = getOffset((*M)[s], Ak)
 			if offset>>wfaTypeBits >= Aoffset { // reached the end
+				// fmt.Printf("reach end, s:%d, k:%d, offset:%d, Aoffset:%d\n", s, Ak, offset>>wfaTypeBits, Aoffset)
 				break
+			}
+
+			// fmt.Printf("reduce:\n")
+			if reduce && hi-lo+1 >= maxDistDiff {
+				algn.reduce(q, t, s, lo, hi)
 			}
 		}
 
@@ -244,10 +256,16 @@ func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
 	}
 
 	minS, lastK := s, Ak
+	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
 	if !algn.opt.GlobalAlignment { // find the minimum score on the last line
 		minS, lastK = algn.backtraceStartPosistion(q, t, s)
+		// fmt.Printf("new min s:%d, k:%d\n", minS, lastK)
 	}
-	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
+
+	// offset, _, _ = getOffset((*M)[s], lastK)
+	// h := offset >> wfaTypeBits
+	// v := h - uint32(lastK)
+	// fmt.Printf("min s:%d, k:%d, h:%d, v:%d\n", minS, lastK, h, v)
 
 	return algn.backTrace(q, t, minS, lastK), nil
 }
@@ -256,36 +274,91 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	M := &algn.M
 	m, n := len(*t), len(*q)
 	minS := s
-	Ak := max(m-n, n-m)
+	Ak := m - n
+	lastK := Ak
 
 	var offset uint32
-	var ok bool
+	var ok, kInScope bool
 	var k int
 	var lastRowOrCol bool
-	var lastK int
 	var h, v int
 	for _s := s; _s > 0; _s-- {
 		lastRowOrCol = false
 
-		for k = -Ak; k <= Ak; k++ {
-			offset, ok = getOffset2(M, _s, 0, k)
+		// fmt.Println("a", _s)
+
+		k = Ak
+		for {
+			offset, ok, kInScope = getOffset2(M, _s, 0, k)
+			// fmt.Printf("  s: %d, k: %d, ok: %v, kInScope: %v\n", _s, k, ok, kInScope)
+			if !kInScope {
+				break
+			}
 			if !ok {
+				k--
 				continue
 			}
 			h = int(offset >> wfaTypeBits)
 			v = h - k
-			// fmt.Printf("  s: %d, test: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+
+			// fmt.Printf("    h:%d, v:%d\n", h, v)
+
+			if v <= 0 {
+				break
+			}
+
+			// fmt.Printf("  s: %d, test: offset:%d, k:%d, h:%d, v:%d\n", _s, offset>>wfaTypeBits, k, h, v)
 			if (v == n && h >= n) || (h == m && v >= m) {
-				// fmt.Printf("  s: %d, ok: offset:%d, k:%d\n", _s, offset>>wfaTypeBits, k)
+				// fmt.Println("    ok", v == n && h >= n, h == m && v >= m)
 				lastRowOrCol = true
 				break
 			}
+
+			k--
 		}
 
 		if lastRowOrCol && _s < minS {
 			lastK = k
 			minS = _s
 		}
+
+		if lastRowOrCol {
+			continue
+		}
+
+		k = Ak + 1
+		// fmt.Println("b", _s)
+		for {
+			offset, ok, kInScope = getOffset2(M, _s, 0, k)
+			if !kInScope {
+				break
+			}
+			if !ok {
+				k++
+				continue
+			}
+			h = int(offset >> wfaTypeBits)
+			v = h - k
+
+			if v <= 0 {
+				break
+			}
+
+			// fmt.Printf("  s: %d, test: offset:%d, k:%d, h:%d, v:%d\n", _s, offset>>wfaTypeBits, k, h, v)
+			if (v == n && h >= n) || (h == m && v >= m) {
+				// fmt.Println("    ok", v == n && h >= n, h == m && v >= m)
+				lastRowOrCol = true
+				break
+			}
+
+			k++
+		}
+
+		if lastRowOrCol && _s < minS {
+			lastK = k
+			minS = _s
+		}
+
 	}
 
 	return minS, lastK
@@ -295,7 +368,7 @@ var be = binary.BigEndian
 
 // extend refers to the WF_EXTEND method.
 // The return bool value indicates whether the end of one sequence is reached.
-func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
+func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) (int, int) {
 	lo, hi := kLowHigh(offsets)
 	// fmt.Printf("  lo: %d, hi: %d, offsets: %d\n", lo, hi, *offsets)
 
@@ -311,7 +384,7 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 	//   offset(k=0), offset(k=-1), offset(k=1), offset(k=-2), offset(k=2), ...
 	var ok bool
 	for k := hi; k >= lo; k-- {
-		offset, ok = getOffset(offsets, k)
+		offset, ok, _ = getOffset(offsets, k)
 		// fmt.Printf("    k:%d, ok:%v, offset:%d\n", k, ok, offset>>wfaTypeBits)
 
 		if s > 0 && !ok {
@@ -365,12 +438,17 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 		setOffsetUpdate(offsets, k, uint32(N)<<wfaTypeBits)
 	}
 
-	// -------------------------------------------------------------
-	// adaptive reduce
+	return lo, hi
+}
 
-	if algn.ad == nil || hi-lo+1 < int(algn.ad.MaxDistDiff) {
-		return
-	}
+func (algn *Aligner) reduce(q, t *[]byte, s uint32, lo, hi int) {
+	// fmt.Printf("  lo: %d, hi: %d, offsets: %d\n", lo, hi, *offsets
+	offsets := algn.M[s]
+	var offset uint32
+	var v, h int
+	lenQ := len(*q)
+	lenT := len(*t)
+	var ok bool
 
 	// fmt.Printf("  lo: %d, hi: %d, offsets: %d\n", lo, hi, *offsets)
 	var d, minDist int
@@ -379,7 +457,7 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 	*ds = (*ds)[:0]
 	minDist = math.MaxInt
 	for k := lo; k < hi; k++ { // must in normal order, cause we apppend d later
-		offset, ok = getOffset(offsets, k)
+		offset, ok, _ = getOffset(offsets, k)
 		if s > 0 && !ok {
 			*ds = append(*ds, -1)
 			continue
@@ -423,11 +501,13 @@ func (algn *Aligner) extend(offsets *[]uint32, q, t *[]byte, s uint32) {
 			updateLo = false
 		}
 	}
-	for i := len(*ds) - 1; i >= 0; i-- {
-		if (*ds)[i] >= 0 {
-			_hi = lo + i
-			// fmt.Printf("    new hi: %d, i:%d\n", _hi, i)
-			break
+	if updateLo { // found some distance where d-minDist > maxDistDiff
+		for i := len(*ds) - 1; i >= 0; i-- {
+			if (*ds)[i] >= 0 {
+				_hi = lo + i
+				// fmt.Printf("    new hi: %d, i:%d\n", _hi, i)
+				break
+			}
 		}
 	}
 
@@ -516,8 +596,8 @@ func (algn *Aligner) next(s uint32) {
 
 		// --------------------------------------
 		// insertion: 🠦
-		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k-1)
-		v2, fromI = getOffset2(I, s, p.GapExt, k-1)
+		v1, fromM, _ = getOffset2(M, s, p.GapOpen+p.GapExt, k-1)
+		v2, fromI, _ = getOffset2(I, s, p.GapExt, k-1)
 		v1 >>= wfaTypeBits
 		v2 >>= wfaTypeBits
 		Isk = max(v1, v2) + 1
@@ -543,8 +623,8 @@ func (algn *Aligner) next(s uint32) {
 		// --------------------------------------
 		// deletion: 🠧
 
-		v1, fromM = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
-		v2, fromD = getOffset2(D, s, p.GapExt, k+1)
+		v1, fromM, _ = getOffset2(M, s, p.GapOpen+p.GapExt, k+1)
+		v2, fromD, _ = getOffset2(D, s, p.GapExt, k+1)
 		v1 >>= wfaTypeBits
 		v2 >>= wfaTypeBits
 		Dsk = max(v1, v2)
@@ -570,7 +650,7 @@ func (algn *Aligner) next(s uint32) {
 		// --------------------------------------
 		// mismatch: ⬂
 
-		v1, fromM = getOffset2(M, s, p.Mismatch, k)
+		v1, fromM, _ = getOffset2(M, s, p.Mismatch, k)
 		v1 >>= wfaTypeBits
 		Msk = max(Isk, Dsk, v1+1)
 		if updatedI || updatedD || fromM {
@@ -638,6 +718,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 	lenQ := len(*q)
 	lenT := len(*t)
 	cigar := NewCIGAR()
+	cigar.Score = s
 	var ok bool
 	var k, h, v int
 	var offset, wfaType uint32
@@ -659,7 +740,7 @@ LOOP:
 			// 	wfaType2str(wfaTypePre), op, 1, h+1, v+1)
 		}
 
-		offset, ok = getOffset((*M)[s], k)
+		offset, ok, _ = getOffset((*M)[s], k)
 		if !ok {
 			v = h - k
 			// fmt.Printf("  break as there's no offset\n")

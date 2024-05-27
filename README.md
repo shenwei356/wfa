@@ -61,11 +61,14 @@ Global alignment
 |10 |G  |  .   |  .  |  .   |  .   |  .  |  .  |  .  |  .  |  .  |⬊12  |
 
 ```
-Region: q[1, 10] vs t[1, 10]
 CIGAR:  1M2X2M1X4M
 query   ACCATACTCG
         |  || ||||
 target  AGGATGCTCG
+
+align-score : 12
+align-region: q[1, 10] vs t[1, 10]
+align-length: 10, matches: 7 (70.00%), gaps: 0, gapRegions: 0
 ```
 
 Semi-global alignment
@@ -83,12 +86,76 @@ Semi-global alignment
 |8  |C  |⬊ 0  |⬂ 8  |⬂ 8   |🠦12   |🠦14   |🠦16   |⬊12  |⬊16   |⬂16   |⬊16  |🠧20   |  .  |
 |9  |G  |⬂ 4  |⬂ 4  |⬊ 8   |⬊ 8   |⬂16   |⬂18   |⬂20  |⬂16   |⬂20   |⬂20  |⬊16   |⬊20  |
 ```
-Region: q[1, 9] vs t[2, 11]
-CIGAR:  1M1X1M1X1M1I4M
+CIGAR:  1I1M1X1M1X1M1I4M1I
 query   -ACGAT-CTCG-
          | | | ||||
 target  CAGGCTCCTCGG
+
+align-score : 16
+align-region: q[1, 9] vs t[2, 11]
+align-length: 10, matches: 7 (70.00%), gaps: 1, gapRegions: 1
 ```
+
+## Examples
+
+```
+import "github.com/shenwei356/wfa"
+
+// aligner
+algn := wfa.New(
+    &wfa.Penalties{
+        Mismatch: 4,
+        GapOpen:  6,
+        GapExt:   2,
+    },
+    &wfa.Options{
+        GlobalAlignment: false,
+    })
+
+// set adaptive reduction parameters
+algn.AdaptiveReduction(&wfa.AdaptiveReductionOption{
+    MinWFLen:    10,
+    MaxDistDiff: 50,
+    CutoffStep:  1,
+})
+
+q := []byte("ACCATACTCG")
+t := []byte("AGGATGCTCG")
+
+// align
+cigar, err := algn.Align(&q, &t)
+checkErr(err)
+
+// score table of M
+algn.Plot(&q, &t, os.Stdout, algn.M, true)
+
+if cigar != nil {
+    fmt.Println()
+    fmt.Printf("CIGAR:  %s\n", cigar.CIGAR())
+
+    Q, A, T := cigar.Alignment(&q, &t)
+    fmt.Printf("query   %s\n", *Q)
+    fmt.Printf("        %s\n", *A)
+    fmt.Printf("target  %s\n", *T)
+
+    fmt.Println()
+    fmt.Printf("align-score : %d\n", cigar.Score)
+    fmt.Printf("align-region: q[%d, %d] vs t[%d, %d]\n",
+        cigar.QBegin+1, cigar.QEnd+1, cigar.TBegin+1, cigar.TEnd+1)
+    fmt.Printf("align-length: %d, matches: %d (%.2f%%), gaps: %d, gapRegions: %d\n",
+        cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
+        cigar.Gaps, cigar.GapRegions)
+    fmt.Println()
+
+    // !! important, recycle objects
+    RecycleAlignment(Q, A, T)
+    RecycleCIGAR(cigar)
+}
+
+// !! important, recycle objects
+RecycleAligner(algn)
+```
+
 
 ## Reference
 
