@@ -202,9 +202,13 @@ const MaxSeqLen int = 1<<(32-wfaTypeBits) - 1
 
 var ErrSeqTooLong error = fmt.Errorf("wfa: sequences longer than %d are not supported", MaxSeqLen)
 
-// Align performs alignment for two sequence.
-// The length of q should be <= that of t.
-func (algn *Aligner) Align(q, t *[]byte) (*CIGAR, error) {
+// Align performs alignment with two sequences.
+func (algn *Aligner) Align(q, t []byte) (*CIGAR, error) {
+	return algn.AlignPointers(&q, &t)
+}
+
+// AlignPointers performs alignment with two sequences. The arguments are pointers.
+func (algn *Aligner) AlignPointers(q, t *[]byte) (*CIGAR, error) {
 	m, n := len(*t), len(*q)
 
 	if n == 0 || m == 0 {
@@ -851,6 +855,8 @@ LOOP:
 	}
 
 	cigar.TBegin, cigar.QBegin = h+1, v+1
+
+	cigar.process()
 
 	return cigar
 }
