@@ -273,10 +273,16 @@ var poolBytes = &sync.Pool{New: func() interface{} {
 
 // RecycleAlignment recycle alignment strings
 func RecycleAlignment(Q, A, T *[]byte) {
-	*Q = (*Q)[:0]
-	*A = (*A)[:0]
-	*T = (*T)[:0]
-	poolBytes.Put(Q)
-	poolBytes.Put(A)
-	poolBytes.Put(T)
+	if Q != nil {
+		*Q = (*Q)[:0]
+		poolBytes.Put(Q)
+	}
+	if A != nil {
+		*A = (*A)[:0]
+		poolBytes.Put(A)
+	}
+	if T != nil {
+		*T = (*T)[:0]
+		poolBytes.Put(T)
+	}
 }

@@ -18,7 +18,7 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
       Value `0` means the `k` does not exist.
 
     - Offsets are saved with `uint32` integers, with the lower 3 bits for
-      saving 5 possible paths which are used for backrace.
+      saving 5 possible paths which are used for backtrace.
 
             wfaInsertOpen uint32 = iota + 1
             wfaInsertExt
@@ -148,12 +148,12 @@ if cigar != nil {
     fmt.Println()
 
     // !! important, recycle objects
-    RecycleAlignment(Q, A, T)
-    RecycleCIGAR(cigar)
+    wfa.RecycleAlignment(Q, A, T)
+    wfa.RecycleCIGAR(cigar)
 }
 
 // !! important, recycle objects
-RecycleAligner(algn)
+wfa.RecycleAligner(algn)
 ```
 
 

@@ -737,7 +737,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 	var handlePre bool
 LOOP:
 	for {
-		if handlePre {
+		if handlePre && h >= 0 {
 			op = wfaOps[wfaTypePre]
 			cigar.AddN(op, 1)
 			// fmt.Printf("  addPre a. type: %s, op: %c, n=%d, h: %d, v: %d\n",
@@ -745,6 +745,8 @@ LOOP:
 		}
 
 		offset, ok, _ = getOffset((*M)[s], k)
+		// fmt.Printf("s: %d, k: %d, offset: %d\n", s, k, offset>>wfaTypeBits)
+
 		if !ok {
 			v = h - k
 			// fmt.Printf("  break as there's no offset\n")
@@ -770,10 +772,10 @@ LOOP:
 			cigar.TEnd, cigar.QEnd = h, v
 		}
 
-		// fmt.Printf(" s: %d, k: %d, type: %s h: %d, v: %d\n", s, k, wfaType2str(wfaMatch), h+1, v+1)
-
 		wfaType = offset & wfaTypeMask
 		op = wfaOps[wfaType] // set op temporally
+
+		// fmt.Printf(" s: %d, k: %d, type: %s h: %d, v: %d\n", s, k, wfaType2str(wfaMatch), h+1, v+1)
 
 		n = 0
 
@@ -813,6 +815,7 @@ LOOP:
 		}
 		wfaTypePre = wfaType
 
+		// fmt.Printf("  current s: %d, k:%d, %s\n", s, k, wfaType2str(wfaType))
 		switch wfaType {
 		case wfaInsertOpen:
 			s -= p.GapOpen + p.GapExt
@@ -836,7 +839,7 @@ LOOP:
 			break LOOP
 		}
 
-		// fmt.Printf("  new s: %d, k: %d\n", s, k)
+		// fmt.Printf("  new s: %d, k: %d, h: %d\n", s, k, h+1)
 	}
 
 	if handlePre && h >= 0 && v >= 0 { // not the record for inialization

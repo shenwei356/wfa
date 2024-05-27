@@ -38,7 +38,7 @@ import (
 //	🠧    Gap extension (Deletion)
 //	⬂    Mismatch
 //	⬊    Match
-func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) {
+func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, notChangeToMatch bool) {
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)
 	for range *q {
@@ -128,7 +128,9 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 
 			// change it to match
 			v0, h0 = v, h
-			(*(*m)[v0])[h0] = int32(s)<<wfaTypeBits | int32(wfaMatch)
+			if !notChangeToMatch {
+				(*(*m)[v0])[h0] = int32(s)<<wfaTypeBits | int32(wfaMatch)
+			}
 
 			n = 0
 			for {
@@ -156,8 +158,11 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 					continue
 				}
 
-				// (*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
-				(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
+				if !notChangeToMatch {
+					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
+				} else {
+					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+				}
 
 				vp, hp = v, h // for the last one (or the original one in the normal order), we will restore it.
 
@@ -169,7 +174,9 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool) 
 			if n == 0 { // just itself
 				vp, hp = v0, h0
 			}
-			(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
+			if !notChangeToMatch {
+				(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
+			}
 		}
 	}
 

@@ -79,6 +79,9 @@ func TestWFA(_t *testing.T) {
 	// q := []byte("AGCTAGTGTCAATGGCTACTTTTCAGGTCCT")
 	// t := []byte("AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT")
 
+	// q := []byte("ATTAAAATTATCATAACCAGTTGTCTGACATTTATAAAAATAAAATACCGCTGACCGCAGACTACGAGTCGGGGTTGTATGCTAGAGAGTGGACTGAAC")
+	// t := []byte("GAATTAAAATTATCATAACCAGTTGTCTGATCATATAAAAATAAAATACCGCTGACCGCAGACTACGAGTCGGGGTTGTATGCTAGAGAGTGGACTGAAC")
+
 	q = bytes.ToUpper(q)
 	t = bytes.ToUpper(t)
 	cigar, err := algn.Align(q, t)
@@ -89,15 +92,15 @@ func TestWFA(_t *testing.T) {
 
 	// fmt.Printf("\n---------------- M ----------------\n")
 	// PrintComponent(os.Stdout, algn.M, "M")
-	algn.Plot(&q, &t, os.Stdout, algn.M, true)
+	algn.Plot(&q, &t, os.Stdout, algn.M, true, true)
 
 	// fmt.Printf("\n---------------- I ----------------\n")
 	// PrintComponent(os.Stdout, algn.I, "I")
-	// algn.Plot(&q, &t, os.Stdout, algn.I, false)
+	// algn.Plot(&q, &t, os.Stdout, algn.I, false, true)
 
 	// fmt.Printf("\n---------------- D ----------------\n")
 	// PrintComponent(os.Stdout, algn.D, "D")
-	// algn.Plot(&q, &t, os.Stdout, algn.D, false)
+	// algn.Plot(&q, &t, os.Stdout, algn.D, false, true)
 
 	if cigar != nil {
 		fmt.Println()
