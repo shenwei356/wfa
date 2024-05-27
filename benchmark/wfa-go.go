@@ -27,6 +27,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/pkg/profile"
 	"github.com/shenwei356/wfa"
 )
 
@@ -63,12 +64,20 @@ Options/Flags:
 	infile := flag.String("i", "", "input file. ")
 	noGlobal := flag.Bool("g", false, "do not use global alignment")
 	noAdaptive := flag.Bool("a", false, "do not use adaptive reduction")
+	noOutput := flag.Bool("N", false, "do not output alignment (for benchmark)")
+
+	pprof := flag.Bool("p", false, "cpu pprof")
 
 	flag.Parse()
 
 	if *help {
 		flag.Usage()
 		return
+	}
+
+	// go tool pprof -http=:8080 cpu.pprof
+	if *pprof {
+		defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
 	}
 
 	penalties := wfa.DefaultPenalties
@@ -91,20 +100,22 @@ Options/Flags:
 			checkError(err)
 		}
 
-		Q, A, T := cigar.Alignment(&_q, &_t)
+		if !*noOutput {
+			Q, A, T := cigar.Alignment(&_q, &_t)
 
-		// fmt.Fprintln(outfh, q, t)
-		fmt.Fprintf(outfh, "query   %s\n", *Q)
-		fmt.Fprintf(outfh, "        %s\n", *A)
-		fmt.Fprintf(outfh, "target  %s\n", *T)
-		fmt.Fprintf(outfh, "cigar   %s\n", cigar.CIGAR())
-		fmt.Fprintf(outfh, "length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
-			cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
-			cigar.Gaps, cigar.GapRegions)
-		fmt.Fprintln(outfh)
+			// fmt.Fprintln(outfh, q, t)
+			fmt.Fprintf(outfh, "query   %s\n", *Q)
+			fmt.Fprintf(outfh, "        %s\n", *A)
+			fmt.Fprintf(outfh, "target  %s\n", *T)
+			fmt.Fprintf(outfh, "cigar   %s\n", cigar.CIGAR())
+			fmt.Fprintf(outfh, "length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
+				cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
+				cigar.Gaps, cigar.GapRegions)
+			fmt.Fprintln(outfh)
 
-		wfa.RecycleAlignment(Q, A, T)
-		wfa.RecycleCIGAR(cigar)
+			wfa.RecycleAlignment(Q, A, T)
+			wfa.RecycleCIGAR(cigar)
+		}
 		wfa.RecycleAligner(algn)
 	}
 

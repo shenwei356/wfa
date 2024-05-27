@@ -107,7 +107,7 @@ func setOffset(offsets *[]uint32, k int, offset uint32) {
 	}
 }
 
-// setOffset updates the offset of a k.
+// setOffsetUpdate updates the offset of a k.
 func setOffsetUpdate(offsets *[]uint32, k int, delta uint32) {
 	// k:  0, -1 , 1, -2, 2
 	if k == 0 {
@@ -129,6 +129,24 @@ func setOffsetUpdate(offsets *[]uint32, k int, delta uint32) {
 		}
 		(*offsets)[((-k)<<1)-1] += delta
 	}
+}
+
+// setOffsetUpdate2 is similar with setOffsetUpdate, but the input is offsets of all scores.
+func setOffsetUpdate2(M *[]*[]uint32, s uint32, k int, delta uint32) {
+	if int(s) >= len(*M) { // fill the list of all offsets
+		n := int(s) + 1 - len(*M)
+		for i := 0; i < n; i++ {
+			*M = append(*M, nil)
+		}
+	}
+
+	offsets := (*M)[s]
+	if (*M)[s] == nil { // creates a list of offsets
+		offsets = poolOffsets.Get().(*[]uint32)
+		(*M)[s] = offsets
+	}
+
+	setOffsetUpdate(offsets, k, delta)
 }
 
 // setOffset2 is similar with setOffset, but the input is offsets of all scores.

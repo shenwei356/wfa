@@ -4,6 +4,14 @@
 
 This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (maybe in the future).
 
+## Table of Contents
+
++ [Details](#details)
++ [Examples](#examples)
++ [Usages](#usages)
++ [Benchmark](#benchmark)
++ [Reference](#reference)
+
 ## Details
 
 - A WFA component is saved with a 2-dimension (`s`, `k`) slice `[]*[]uint32`.
@@ -31,7 +39,7 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
 - All objects are saved in object pool for computation efficiency.
   Just don't forget to recycle them.
 
-## Visualization
+## Examples
 
 Each WFA component can be visualized as a table.
 A table cell contains the alignment type symbol and the score.
@@ -96,7 +104,7 @@ align-region: q[1, 9] vs t[2, 11]
 align-length: 10, matches: 7 (70.00%), gaps: 1, gapRegions: 1
 ```
 
-## Examples
+## Usages
 
 ```
 import "github.com/shenwei356/wfa"
@@ -129,7 +137,7 @@ checkErr(err)
 // score table of M
 algn.Plot(&q, &t, os.Stdout, algn.M, true)
 
-if cigar != nil {
+if outputAlignment {
     fmt.Println()
     fmt.Printf("CIGAR:  %s\n", cigar.CIGAR())
 
@@ -156,10 +164,44 @@ if cigar != nil {
 wfa.RecycleAligner(algn)
 ```
 
+## Benchmark
+
+WFA2-lib v2.3.5
+
+Generate datasets with WFA2-lib:
+
+    ./bin/generate_dataset -n 100000 -l 1000 -e 0.05 -o l1000-e0.05.seq
+    ./bin/generate_dataset -n 100000 -l 1000 -e 0.10 -o l1000-e0.10.seq
+    ./bin/generate_dataset -n 100000 -l 1000 -e 0.20 -o l1000-e0.20.seq
+
+Commands:
+
+    # memusg: https://github.com/shenwei356/memusg
+
+    # WFA2-lib
+    memusg -t -s "./bin/align_benchmark -i l1000-e0.05.seq  -a gap-affine-wfa"
+
+    # WFA-go (this package)
+    # global alignment && do not output results
+    memusg -t -s "go run ./benchmark/wfa-go.go -N -i /home/shenwei/Downloads/WFA2-lib/sample.dataset.seq"
+
+Results:
+
+|Seq-len|Seq-num|Error-rate|Package |Time   |Memory  |
+|:-----:|:-----:|:--------:|:-------|------:|-------:|
+|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB |
+|       |       |          |WFA-go  |2m:09s |30.83 MB|
+|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB |
+|       |       |          |WFA-go  |6m:26s |37.26 MB|
+|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB |
+|       |       |          |WFA-go  |16m:25s|54.86 MB|
+
 
 ## Reference
 
 - **Santiago Marco-Sola, Juan Carlos Moure, Miquel Moreto, Antonio Espinosa**. ["Fast gap-affine pairwise alignment using the wavefront algorithm."](https://doi.org/10.1093/bioinformatics/btaa777) Bioinformatics, 2020.
+- https://github.com/smarco/WFA-paper/
+- https://github.com/smarco/WFA2-lib
 
 ## Support
 
