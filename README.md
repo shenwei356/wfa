@@ -9,6 +9,7 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
 + [Details](#details)
 + [Examples](#examples)
 + [Usages](#usages)
++ [CLI](#cli)
 + [Benchmark](#benchmark)
 + [Reference](#reference)
 
@@ -157,18 +158,61 @@ if outputAlignment {
 
     // !! important, recycle objects
     wfa.RecycleAlignment(Q, A, T)
-    wfa.RecycleCIGAR(cigar)
 }
 
 // !! important, recycle objects
+wfa.RecycleCIGAR(cigar)
 wfa.RecycleAligner(algn)
 ```
 
+## CLI
+
+A [CLI](https://github.com/shenwei356/wfa/blob/main/benchmark/wfa-go.go) is available to
+align two sequences from either positional arguments or an input file
+([format](https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests)).
+
+<details>
+<summary>Usage</summary>
+
+```
+WFA alignment in Golang
+
+ Author: Wei Shen <shenwei356@gmail.com>
+   Code: https://github.com/shenwei356/wfa
+Version: v0.1.0
+
+Input file format:
+  see https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests
+  Example:
+  >ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
+  <GATTGGAAAATAGGATGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTGCTCGAAGCCCA
+  >CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGACCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCAGTGATTAAAC
+  <CCTAGAGTTAGACACTCGACCGTGGTGAATCCGCGATCTACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCGAGTGATTAAAC
+
+Usage:
+  1. Align two sequences from the positional arguments.
+
+        wfa-go [options] <query seq> <target seq>
+
+  2. Align sequence pairs from the input file (described above).
+
+        wfa-go [options] -i input.txt
+
+Options/Flags:
+  -N    do not output alignment (for benchmark)
+  -a    do not use adaptive reduction
+  -g    do not use global alignment
+  -h    print help message
+  -i string
+        input file.
+  -m    mem pprof. go tool pprof -http=:8080 mem.pprof
+  -p    cpu pprof. go tool pprof -http=:8080 cpu.pprof
+```
+</details>
+
 ## Benchmark
 
-WFA2-lib v2.3.5
-
-Generate datasets with WFA2-lib:
+Generate datasets with WFA2-lib (v2.3.5):
 
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.05 -o l1000-e0.05.seq
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.10 -o l1000-e0.10.seq
@@ -183,18 +227,18 @@ Commands:
 
     # WFA-go (this package)
     # global alignment && do not output results
-    memusg -t -s "go run ./benchmark/wfa-go.go -N -i /home/shenwei/Downloads/WFA2-lib/sample.dataset.seq"
+    memusg -t -s "go run ./benchmark/wfa-go.go -N -i /home/shenwei/Downloads/WFA2-lib/l1000-e0.05.seq"
 
 Results:
 
-|Seq-len|Seq-num|Error-rate|Package |Time   |Memory  |
-|:-----:|:-----:|:--------:|:-------|------:|-------:|
-|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB |
-|       |       |          |WFA-go  |2m:09s |30.83 MB|
-|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB |
-|       |       |          |WFA-go  |6m:26s |37.26 MB|
-|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB |
-|       |       |          |WFA-go  |16m:25s|54.86 MB|
+|Seq-len|Seq-num|Error-rate|Package |Time   |Memory   |Time-ratio|
+|:-----:|:-----:|:--------:|:-------|:-----:|--------:|---------:|
+|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB  |1x        |
+|       |       |          |WFA-go  |1m:19s |51.3 MB  |14x       |
+|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB  |1x        |
+|       |       |          |WFA-go  |4m:22s |112.73 MB|18x       |
+|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB  |1x        |
+|       |       |          |WFA-go  |12m:26s|107.97 MB|16x       |
 
 
 ## Reference

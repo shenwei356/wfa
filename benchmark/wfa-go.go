@@ -44,16 +44,23 @@ Version: v%s
 
 Input file format:
   see https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests
-
-Example: %s
+  Example:
+  >ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
+  <GATTGGAAAATAGGATGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTGCTCGAAGCCCA
+  >CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGACCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCAGTGATTAAAC
+  <CCTAGAGTTAGACACTCGACCGTGGTGAATCCGCGATCTACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCGAGTGATTAAAC
 
 Usage: 
+  1. Align two sequences from the positional arguments.
 
-  1. %s [options] <query seq> <target seq>
-  2. %s [options] -i input.txt
+        %s [options] <query seq> <target seq>
+
+  2. Align sequence pairs from the input file (described above).
+
+        %s [options] -i input.txt
 
 Options/Flags:
-`, version, app, app, app)
+`, version, app, app)
 
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, usage)
@@ -66,7 +73,8 @@ Options/Flags:
 	noAdaptive := flag.Bool("a", false, "do not use adaptive reduction")
 	noOutput := flag.Bool("N", false, "do not output alignment (for benchmark)")
 
-	pprof := flag.Bool("p", false, "cpu pprof")
+	pprofCPU := flag.Bool("p", false, "cpu pprof. go tool pprof -http=:8080 cpu.pprof")
+	pprofMem := flag.Bool("m", false, "mem pprof. go tool pprof -http=:8080 mem.pprof")
 
 	flag.Parse()
 
@@ -76,8 +84,10 @@ Options/Flags:
 	}
 
 	// go tool pprof -http=:8080 cpu.pprof
-	if *pprof {
+	if *pprofCPU {
 		defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()
+	} else if *pprofMem {
+		defer profile.Start(profile.MemProfile, profile.ProfilePath(".")).Stop()
 	}
 
 	penalties := wfa.DefaultPenalties
@@ -114,8 +124,8 @@ Options/Flags:
 			fmt.Fprintln(outfh)
 
 			wfa.RecycleAlignment(Q, A, T)
-			wfa.RecycleCIGAR(cigar)
 		}
+		wfa.RecycleCIGAR(cigar)
 		wfa.RecycleAligner(algn)
 	}
 

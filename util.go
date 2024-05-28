@@ -173,28 +173,21 @@ func getOffset(offsets *[]uint32, k int) (uint32, bool, bool) {
 		return 0, false, false
 	}
 
-	if k == 0 {
-		if len(*offsets) < k+1 {
-			return 0, false, false
-		}
-		return (*offsets)[0], (*offsets)[0] > 0, true
-	}
-
 	var i int
-	if k < 0 {
+	var offset uint32
+	if k == 0 {
+		i = 0
+	} else if k < 0 {
 		i = ((-k) << 1) - 1
-		if len(*offsets) < i+1 {
-			return 0, false, false
-		}
-		return (*offsets)[i], (*offsets)[i] > 0, true
+	} else {
+		i = k << 1
 	}
 
-	// k > 0
-	i = k << 1
 	if len(*offsets) < i+1 {
 		return 0, false, false
 	}
-	return (*offsets)[i], (*offsets)[i] > 0, true
+	offset = (*offsets)[i]
+	return offset, offset > 0, true
 }
 
 // removeOffset remove the offset of a k.
@@ -203,32 +196,22 @@ func removeOffset(offsets *[]uint32, k int) (uint32, bool) {
 		return 0, false
 	}
 
-	var old uint32
-	var ok bool
-	if k == 0 {
-		old, ok = (*offsets)[0], (*offsets)[0] > 0
-		(*offsets)[0] = 0
-		return old, ok
-	}
-
 	var i int
-	if k < 0 {
+	var ok bool
+	var old uint32
+	if k == 0 {
+		i = 0
+	} else if k < 0 {
 		i = ((-k) << 1) - 1
-		if len(*offsets) < i+1 {
-			return 0, false
-		}
-
-		old, ok = (*offsets)[i], (*offsets)[i] > 0
-		(*offsets)[i] = 0
-		return old, ok
+	} else {
+		i = k << 1
 	}
 
-	// k > 0
-	i = k << 1
 	if len(*offsets) < i+1 {
 		return 0, false
 	}
-	old, ok = (*offsets)[i], (*offsets)[i] > 0
+	old = (*offsets)[i]
+	ok = old > 0
 	(*offsets)[i] = 0
 	return old, ok
 }

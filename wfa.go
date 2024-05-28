@@ -536,6 +536,8 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32, lo, hi int) {
 		removeOffset((*D)[s], k)
 	}
 	// fmt.Printf("  new lo: %d, hi: %d, offsets: %d\n", _lo, _hi, *offsets)
+
+	poolDist.Put(ds)
 }
 
 var poolDist = &sync.Pool{New: func() interface{} {

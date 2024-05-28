@@ -91,6 +91,10 @@ func TestWFA(_t *testing.T) {
 	// q := []byte("C")
 	// t := []byte("C")
 
+	// distant sequences
+	// q := []byte("ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA")
+	// t := []byte("CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGACCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCAGTGATTAAAC")
+
 	q = bytes.ToUpper(q)
 	t = bytes.ToUpper(t)
 	cigar, err := algn.Align(q, t)
