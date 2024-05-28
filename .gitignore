@@ -7,3 +7,6 @@
 *.brename_detail.txt
 .Rhistory
 t.*
+
+wfa-go
+benchmark/benchmark

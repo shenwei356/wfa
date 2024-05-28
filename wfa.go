@@ -599,6 +599,7 @@ const wfaTypeMask uint32 = (1 << wfaTypeBits) - 1
 
 // next refers to the WF_NEXT method.
 func (algn *Aligner) next(q, t *[]byte, s uint32) {
+	// PrintComponent(os.Stdout, algn.M, "M")
 	M := &algn.M
 	I := &algn.I
 	D := &algn.D
@@ -635,7 +636,7 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		v2, fromI, _ = getOffset2(I, s, p.GapExt, k-1)
 		v1 >>= wfaTypeBits
 		v2 >>= wfaTypeBits
-		if fromM && v1 > 1 && (v1 == lenQ || v1 == lenT) { // it's the last column/row
+		if fromM && v1 > 1 && v1 == lenT { // it's the last column
 			fromM = false
 			v1 = 0
 		}
@@ -674,11 +675,11 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		v2, fromD, _ = getOffset2(D, s, p.GapExt, k+1)
 		v1 >>= wfaTypeBits
 		v2 >>= wfaTypeBits
-		if fromM && v1 > 1 && (v1 == lenT || v1-uint32(k) == lenQ) { // it's the last column/row
+		if fromM && v1 > 1 && v1-uint32(k) == lenQ { // it's the last row
 			fromM = false
 			v1 = 0
 		}
-		if fromD && v2 > 1 && v2 == lenQ { // it's the last row
+		if fromD && v2 > 1 && v2-uint32(k) == lenQ { // it's the last row
 			fromD = false
 			v2 = 0
 		}

@@ -118,6 +118,10 @@ func TestWFA(_t *testing.T) {
 	// q = []byte("TACATTTTTACCTATGTGAGATATTTCACATAAACTTAGTACTACTATGAGTTTGTTCGTGTATGATGGGGTCGAC")
 	// t = []byte("TACATTTTTACCTATGTGAGATATTTCACATAAACTTAGTATAAATGAGTTGTTCGTGTATGATGGGGTCGACGA")
 
+	// boundary checking
+	q = []byte("ACTG")
+	t = []byte("ACTGA")
+
 	q = bytes.ToUpper(q)
 	t = bytes.ToUpper(t)
 	cigar, err := algn.Align(q, t)
