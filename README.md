@@ -110,6 +110,8 @@ align-length: 10, matches: 7 (70.00%), gaps: 1, gapRegions: 1
 ```
 import "github.com/shenwei356/wfa"
 
+// ------------------[ initialization ]------------------
+
 // aligner
 algn := wfa.New(
     &wfa.Penalties{
@@ -127,6 +129,8 @@ algn.AdaptiveReduction(&wfa.AdaptiveReductionOption{
     MaxDistDiff: 50,
     CutoffStep:  1,
 })
+
+// ------------------[ align one pair of seqs ]------------------
 
 q := []byte("ACCATACTCG")
 t := []byte("AGGATGCTCG")
@@ -156,13 +160,16 @@ if outputAlignment {
         cigar.Gaps, cigar.GapRegions)
     fmt.Println()
 
-    // !! important, recycle objects
-    wfa.RecycleAlignment(Q, A, T)
+    
+    wfa.RecycleAlignment(Q, A, T) // !! important, recycle objects
 }
 
-// !! important, recycle objects
-wfa.RecycleCIGAR(cigar)
-wfa.RecycleAligner(algn)
+wfa.RecycleCIGAR(cigar) // !! important, recycle objects
+
+// ------------------[ clean ]------------------
+
+wfa.RecycleAligner(algn) // !! important, recycle objects
+
 ```
 
 ## CLI

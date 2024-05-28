@@ -90,19 +90,22 @@ Options/Flags:
 		defer profile.Start(profile.MemProfile, profile.ProfilePath(".")).Stop()
 	}
 
-	penalties := wfa.DefaultPenalties
-	options := &wfa.Options{
-		GlobalAlignment: !*noGlobal,
-	}
-	optionsAdaptive := wfa.DefaultAdaptiveOption
-
 	outfh := bufio.NewWriter(os.Stdout)
 
+	algn := wfa.New(wfa.DefaultPenalties, &wfa.Options{
+		GlobalAlignment: !*noGlobal,
+	})
+
+	if !*noAdaptive {
+		algn.AdaptiveReduction(wfa.DefaultAdaptiveOption)
+	}
+
+	defer func() {
+		wfa.RecycleAligner(algn)
+		outfh.Flush()
+	}()
+
 	falign2Seq := func(q, t string) {
-		algn := wfa.New(penalties, options)
-		if !*noAdaptive {
-			algn.AdaptiveReduction(optionsAdaptive)
-		}
 
 		_q, _t := []byte(q), []byte(t)
 		cigar, err := algn.Align(_q, _t)
@@ -126,7 +129,6 @@ Options/Flags:
 			wfa.RecycleAlignment(Q, A, T)
 		}
 		wfa.RecycleCIGAR(cigar)
-		wfa.RecycleAligner(algn)
 	}
 
 	var q, t string
@@ -142,7 +144,6 @@ Options/Flags:
 
 		falign2Seq(q, t)
 
-		outfh.Flush()
 		return
 	}
 
@@ -170,7 +171,6 @@ Options/Flags:
 		checkError(fmt.Errorf("something wrong in reading file: %s", *infile))
 	}
 
-	outfh.Flush()
 }
 
 func checkError(err error) {

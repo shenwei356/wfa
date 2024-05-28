@@ -38,7 +38,7 @@ import (
 //	🠧    Gap extension (Deletion)
 //	⬂    Mismatch
 //	⬊    Match
-func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, notChangeToMatch bool) {
+func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, notChangeToMatch bool, maxScore int) {
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)
 	for range *q {
@@ -54,15 +54,21 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 	var offset uint32
 	var wfaType uint32
 	var v, h int
-	I := &algn.I
-	D := &algn.D
-	var fromD, fromI, fromID, backTraceMat bool
-	var offsetID uint32
 	var n, vp, hp, v0, h0 int
+
+	S := &algn.SM
+	var h00 int
+	var offset00 uint32
+
 	for s, offsets := range M {
 		if offsets == nil {
 			continue
 		}
+
+		if maxScore >= 0 && s > maxScore {
+			break
+		}
+
 		// fmt.Printf("s: %d\n", s)
 		for _k, offset = range *offsets { // k:  0, -1 , 1, -2, 2
 			if offset == 0 {
@@ -81,7 +87,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 			h = int(offset>>wfaTypeBits) - 1
 			v = h - k
 
-			// fmt.Printf("   v: %d, h: %d\n", v, h)
+			// fmt.Printf("   v (0-based): %d, h (0-based): %d\n", v, h)
 			if v < 0 || h < 0 || v >= len(*m) || h >= len(*(*m)[v]) {
 				continue
 			}
@@ -90,48 +96,27 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 				continue
 			}
 
-			// fmt.Printf("    fill h:%d, v:%d\n", h+1, v+1)
+			// fmt.Printf("    fill h (1-based):%d, v (1-based):%d\n", h+1, v+1)
 			(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
 
 			if !isM || (*q)[v] != (*t)[h] {
 				continue
 			}
 
-			fromID = false
-			// for decide should we backtrace the matches
-			switch wfaType {
-			case wfaInsertOpen, wfaInsertExt, wfaDeleteOpen, wfaDeleteExt:
-				backTraceMat = false
-				offsetID, fromI, _ = getOffset2(I, uint32(s), 0, k)
-				// fmt.Printf("    test I: %v, s: %d, k: %d, offset: %d\n", fromI, s, k, offsetID>>wfaTypeBits)
-				if fromI {
-					backTraceMat = true
-					offsetID = offsetID >> wfaTypeBits
-				} else {
-					offsetID, fromD, _ = getOffset2(D, uint32(s), 0, k)
-					// fmt.Printf("    test D: %v, s: %d, %d, offset: %d\n", fromD, s, k, offsetID>>wfaTypeBits)
-					if fromD {
-						backTraceMat = true
-						offsetID = offsetID >> wfaTypeBits
-					}
-				}
-				backTraceMat = fromD || fromI
-				fromID = true
-			default:
-				backTraceMat = true
-			}
+			offset00, _, _ = getOffset2(S, uint32(s), 0, k)
+			h00 = int(offset00>>wfaTypeBits) - 1
+			// fmt.Printf("    start h: %d, current h: %d\n", h00+1, h+1)
 
-			// fmt.Printf("    backTraceMat: %v, offsetID: %d\n", backTraceMat, offsetID)
-			if !backTraceMat {
+			if h == h00 { // were not extended at all
 				continue
 			}
 
 			// change it to match
 			v0, h0 = v, h
 			if !notChangeToMatch {
+				// fmt.Printf("    change %s to match: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
 				(*(*m)[v0])[h0] = int32(s)<<wfaTypeBits | int32(wfaMatch)
 			}
-
 			n = 0
 			for {
 				h--
@@ -139,19 +124,6 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 				if v < 0 || h < 0 {
 					break
 				}
-
-				if fromID {
-					if fromI {
-						// fmt.Printf("    check I: %d, %d\n", h, int(offsetID)-1)
-						if h < int(offsetID)-1 {
-							break
-						}
-					} else if v < int(offsetID)-1-k {
-						// fmt.Printf("    check D: %d, %d\n", v, int(offsetID)-1)
-						break
-					}
-				}
-
 				n++
 
 				if (*(*m)[v])[h] >= 0 {
@@ -160,22 +132,23 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 
 				if !notChangeToMatch {
 					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
+					// fmt.Printf("    change %s to match: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
 				} else {
 					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
 				}
 
 				vp, hp = v, h // for the last one (or the original one in the normal order), we will restore it.
 
-				if (*q)[v] != (*t)[h] {
+				if (*q)[v] != (*t)[h] || h == h00 {
 					break
 				}
 			}
-
 			if n == 0 { // just itself
 				vp, hp = v0, h0
 			}
 			if !notChangeToMatch {
 				(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
+				// fmt.Printf("    change %s back: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
 			}
 		}
 	}
