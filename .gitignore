@@ -10,3 +10,4 @@ t.*
 
 wfa-go
 benchmark/benchmark
+benchmark/binaries
