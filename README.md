@@ -1,4 +1,4 @@
-# Wavefront alignment algorithm (WFA) in Golang (WIP)
+# Wavefront alignment algorithm (WFA) in Golang
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/shenwei356/wfa.svg)](https://pkg.go.dev/github.com/shenwei356/wfa)
 
@@ -27,7 +27,7 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
       Value `0` means the `k` does not exist.
 
     - Offsets are saved with `uint32` integers, with the lower 3 bits for
-      saving 5 possible paths which are used for backtrace.
+      saving 5 possible paths which are used for backtrace. (it's unnecessary, will remove in this next version).
 
             wfaInsertOpen uint32 = iota + 1
             wfaInsertExt

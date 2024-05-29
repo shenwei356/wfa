@@ -119,8 +119,12 @@ func TestWFA(_t *testing.T) {
 	// t = []byte("TACATTTTTACCTATGTGAGATATTTCACATAAACTTAGTATAAATGAGTTGTTCGTGTATGATGGGGTCGACGA")
 
 	// boundary checking
-	q = []byte("ACTG")
-	t = []byte("ACTGA")
+	// q = []byte("ACTG")
+	// t = []byte("ACTGA")
+
+	// to be fixed
+	q = []byte("AAA")
+	t = []byte("AA")
 
 	q = bytes.ToUpper(q)
 	t = bytes.ToUpper(t)
