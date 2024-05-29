@@ -238,14 +238,14 @@ Commands:
 
 Results:
 
-|Seq-len|Seq-num|Error-rate|Package |Time   |Memory   |Time-ratio|
-|:-----:|:-----:|:--------:|:-------|:-----:|--------:|---------:|
-|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB  |1x        |
-|       |       |          |WFA-go  |1m:19s |51.3 MB  |14x       |
-|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB  |1x        |
-|       |       |          |WFA-go  |4m:22s |112.73 MB|18x       |
-|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB  |1x        |
-|       |       |          |WFA-go  |12m:26s|107.97 MB|16x       |
+|Seq-len|Seq-num|Error-rate|Package |Time   |Memory   |
+|:-----:|:-----:|:--------:|:-------|:-----:|--------:|
+|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB  |
+|       |       |          |WFA-go  |1m:38s |104.33 MB|
+|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB  |
+|       |       |          |WFA-go  |5m:14s |72.87 MB |
+|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB  |
+|       |       |          |WFA-go  |14m:56s|71.31 MB |
 
 
 ## Reference
