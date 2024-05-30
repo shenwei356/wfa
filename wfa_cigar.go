@@ -229,9 +229,6 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 		switch op.Op {
 		case 'M':
 			for i = 0; i < op.N; i++ {
-				// if v == lenQ || h == lenT {
-				// 	break LOOP
-				// }
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, '|')
 				*T = append(*T, (*t)[h])
@@ -240,9 +237,6 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 			}
 		case 'X':
 			for i = 0; i < op.N; i++ {
-				// if v == lenQ || h == lenT {
-				// 	break LOOP
-				// }
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, ' ')
 				*T = append(*T, (*t)[h])
@@ -251,9 +245,6 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 			}
 		case 'I':
 			for i = 0; i < op.N; i++ {
-				// if h == lenT {
-				// 	break LOOP
-				// }
 				*Q = append(*Q, '-')
 				*A = append(*A, ' ')
 				*T = append(*T, (*t)[h])
@@ -261,9 +252,6 @@ func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 			}
 		case 'D', 'H':
 			for i = 0; i < op.N; i++ {
-				// if v == lenQ {
-				// 	break LOOP
-				// }
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, ' ')
 				*T = append(*T, '-')

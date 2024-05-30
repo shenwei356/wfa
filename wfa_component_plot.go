@@ -38,7 +38,16 @@ import (
 //	🠧    Gap extension (Deletion)
 //	⬂    Mismatch
 //	⬊    Match
-func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, notChangeToMatch bool, maxScore int) {
+func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, _M *Component, notChangeToMatch bool, maxScore int) {
+	M := algn.M
+	I := algn.I
+	D := algn.D
+	p := algn.p
+
+	lenQ := len(*q)
+	lenT := len(*t)
+	isM := M.IsM
+
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)
 	for range *q {
@@ -49,19 +58,19 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 		*m = append(*m, r)
 	}
 
+	// ----------------------------------------------------------------
 	// fill in scores
-	var k, _k int
-	var offset uint32
-	var wfaType uint32
+	var ok bool
+	var k int
+	var offset, wfaType uint32
 	var v, h int
 	var n, vp, hp, v0, h0 int
 
-	S := &algn.SM
+	var v1, v2, Isk, Dsk, offset0 uint32
 	var h00 int
-	var offset00 uint32
 
-	for s, offsets := range M {
-		if offsets == nil {
+	for s, wf := range _M.WaveFronts {
+		if wf == nil {
 			continue
 		}
 
@@ -70,25 +79,18 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 		}
 
 		// fmt.Printf("s: %d\n", s)
-		for _k, offset = range *offsets { // k:  0, -1 , 1, -2, 2
-			if offset == 0 {
+		for k = wf.Lo; k <= wf.Hi; k++ {
+			offset, wfaType, ok = wf.Get(k)
+			if !ok {
 				continue
 			}
-			if _k == 0 { // 0
-				k = 0
-			} else if _k&1 == 1 { // negative
-				k = -((_k + 1) >> 1)
-			} else { // 1, 2
-				k = _k >> 1
-			}
-			// fmt.Printf("  _k:%d, k:%d, offset:%d\n", _k, k, offset>>wfaTypeBits)
+			// fmt.Printf("  k:%d, offset:%d\n", k, offset)
 
-			wfaType = offset & wfaTypeMask
-			h = int(offset>>wfaTypeBits) - 1
+			h = int(offset) - 1 // 0-based now
 			v = h - k
 
 			// fmt.Printf("   v (0-based): %d, h (0-based): %d\n", v, h)
-			if v < 0 || h < 0 || v >= len(*m) || h >= len(*(*m)[v]) {
+			if v < 0 || h < 0 || v >= lenQ || h >= lenT {
 				continue
 			}
 
@@ -103,8 +105,32 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 				continue
 			}
 
-			offset00, _, _ = getOffset2(S, uint32(s), 0, k)
-			h00 = int(offset00>>wfaTypeBits) - 1
+			// ---------------------------------
+
+			switch wfaType {
+			case wfaInsertExt:
+				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k-1)
+				v2, _, _ = I.GetAfterDiff(uint32(s), p.GapExt, k-1)
+				offset0 = max(v1, v2) + 1
+			case wfaDeleteExt:
+				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k+1)
+				v2, _, _ = D.GetAfterDiff(uint32(s), p.GapExt, k+1)
+				offset0 = max(v1, v2)
+			default:
+				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k-1)
+				v2, _, _ = I.GetAfterDiff(uint32(s), p.GapExt, k-1)
+				Isk = max(v1, v2) + 1
+
+				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k+1)
+				v2, _, _ = D.GetAfterDiff(uint32(s), p.GapExt, k+1)
+				Dsk = max(v1, v2)
+
+				v1, _, _ = M.GetAfterDiff(uint32(s), p.Mismatch, k)
+				offset0 = max(Isk, Dsk, v1+1)
+			}
+
+			h00 = int(offset0) - 1 // 0-based here
+
 			// fmt.Printf("    start h: %d, current h: %d\n", h00+1, h+1)
 
 			if h == h00 { // were not extended at all
@@ -153,6 +179,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, M []*[]uint32, isM bool, 
 		}
 	}
 
+	// ----------------------------------------------------------------
 	// sequence q
 
 	fmt.Fprintf(wtr, "   \t ")

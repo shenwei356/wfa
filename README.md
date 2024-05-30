@@ -154,7 +154,7 @@ if outputAlignment {
     fmt.Println()
     fmt.Printf("align-score : %d\n", cigar.Score)
     fmt.Printf("align-region: q[%d, %d] vs t[%d, %d]\n",
-        cigar.QBegin+1, cigar.QEnd+1, cigar.TBegin+1, cigar.TEnd+1)
+        cigar.QBegin, cigar.QEnd, cigar.TBegin, cigar.TEnd)
     fmt.Printf("align-length: %d, matches: %d (%.2f%%), gaps: %d, gapRegions: %d\n",
         cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
         cigar.Gaps, cigar.GapRegions)
