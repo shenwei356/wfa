@@ -20,7 +20,7 @@
 
 package wfa
 
-// number of bits to save the path.
+// the number of bits to save the path.
 const wfaTypeBits uint32 = 3
 const wfaTypeMask uint32 = (1 << wfaTypeBits) - 1
 
@@ -34,9 +34,11 @@ const (
 	wfaMatch // only for backtrace, not saved in the component
 )
 
-var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'}
-var wfaArrows []rune = []rune{'⊕', '⟼', '🠦', '↧', '🠧', '⬂', '⬊'} // ⬂
+var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'} // for backtrace
 
+var wfaArrows []rune = []rune{'⊕', '⟼', '🠦', '↧', '🠧', '⬂', '⬊'} // for visualization
+
+// for showing offsets.
 func wfaType2str(t uint32) string {
 	switch t {
 	case wfaInsertOpen:

@@ -31,7 +31,7 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.1.0"
+var version = "0.2.0"
 
 func main() {
 	app := filepath.Base(os.Args[0])
@@ -108,27 +108,30 @@ Options/Flags:
 	falign2Seq := func(q, t string) {
 
 		_q, _t := []byte(q), []byte(t)
-		cigar, err := algn.Align(_q, _t)
+		result, err := algn.Align(_q, _t)
 		if err != nil {
 			checkError(err)
 		}
 
 		if !*noOutput {
-			Q, A, T := cigar.Alignment(&_q, &_t)
+			Q, A, T := result.AlignmentText(&_q, &_t)
 
 			// fmt.Fprintln(outfh, q, t)
 			fmt.Fprintf(outfh, "query   %s\n", *Q)
 			fmt.Fprintf(outfh, "        %s\n", *A)
 			fmt.Fprintf(outfh, "target  %s\n", *T)
-			fmt.Fprintf(outfh, "cigar   %s\n", cigar.CIGAR())
-			fmt.Fprintf(outfh, "length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
-				cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
-				cigar.Gaps, cigar.GapRegions)
+			fmt.Fprintf(outfh, "cigar   %s\n", result.CIGAR())
+			fmt.Fprintf(outfh, "align-score : %d\n", result.Score)
+			fmt.Fprintf(outfh, "matched-region: q[%d, %d] vs t[%d, %d]\n",
+				result.QBegin, result.QEnd, result.TBegin, result.TEnd)
+			fmt.Fprintf(outfh, "align-length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
+				result.AlignLen, result.Matches, float64(result.Matches)/float64(result.AlignLen)*100,
+				result.Gaps, result.GapRegions)
 			fmt.Fprintln(outfh)
 
-			wfa.RecycleAlignment(Q, A, T)
+			wfa.RecycleAlignmentText(Q, A, T)
 		}
-		wfa.RecycleCIGAR(cigar)
+		wfa.RecycleAlignmentResult(result)
 	}
 
 	var q, t string

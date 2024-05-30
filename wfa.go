@@ -35,7 +35,7 @@ type Penalties struct {
 	GapExt   uint32
 }
 
-// DefaultPenalties is from the paper.
+// DefaultPenalties is from the WFA paper.
 var DefaultPenalties = &Penalties{
 	Mismatch: 4,
 	GapOpen:  6,
@@ -46,9 +46,10 @@ var DefaultPenalties = &Penalties{
 type AdaptiveReductionOption struct {
 	MinWFLen    uint32
 	MaxDistDiff uint32
-	CutoffStep  uint32
+	CutoffStep  uint32 // not used yet.
 }
 
+// DefaultAdaptiveOption provides a default option with parameters from the official repo.
 // attributes.heuristic.min_wavefront_length = 10;
 // attributes.heuristic.max_distance_threshold = 50;
 // attributes.heuristic.steps_between_cutoffs = 1;
@@ -58,7 +59,8 @@ var DefaultAdaptiveOption = &AdaptiveReductionOption{
 	CutoffStep:  1,
 }
 
-// Options represents a list of options
+// Options represents a list of options.
+// Currently it only support global or semi-global alignment.
 type Options struct {
 	GlobalAlignment bool
 }
@@ -70,7 +72,10 @@ var DefaultOptions = &Options{
 
 // Aligner is the object for aligning,
 // which can apply to multiple pairs of query and ref sequences.
-// And it's from a object pool, in case a large number of alignment are needed.
+// But it's not occurrence safe, which means you can't call Align() in multiple goroutines.
+// Instead, you can create multiple aligners, one for each goroutine.
+// Aligner objects are from a object pool, in case a large number of alignments are needed.
+// Just remember to recyle it with RecycleAligner().
 type Aligner struct {
 	p *Penalties
 
@@ -105,7 +110,7 @@ func RecycleAligner(algn *Aligner) {
 }
 
 // New returns a new Aligner from the object pool.
-// Do not forget to call RecycleAligner after using it.
+// Do not forget to call RecycleAligner() after using it.
 func New(p *Penalties, opt *Options) *Aligner {
 	algn := poolAligner.Get().(*Aligner)
 	algn.p = p
@@ -124,14 +129,16 @@ func (algn *Aligner) AdaptiveReduction(ad *AdaptiveReductionOption) error {
 
 // initComponents resets the internal data before each alignment.
 func (algn *Aligner) initComponents(q, t *[]byte) {
-	ClearWaveFronts(algn.M)
-	ClearWaveFronts(algn.I)
-	ClearWaveFronts(algn.D)
+	// clear all wavefronts
+	algn.M.Reset()
+	algn.I.Reset()
+	algn.D.Reset()
 
 	m, n := len(*t), len(*q)
 	M := algn.M
 
 	var wfaType, score uint32
+
 	// have to check the first bases
 	if (*q)[0] == (*t)[0] { // M[0,0] = 0
 		wfaType, score = wfaMatch, 0
@@ -140,7 +147,8 @@ func (algn *Aligner) initComponents(q, t *[]byte) {
 	}
 	M.Set(score, 0, 1, wfaType)
 
-	if !algn.opt.GlobalAlignment { // for semi-global alignment
+	// for semi-global alignment
+	if !algn.opt.GlobalAlignment {
 		for k := 1; k < m; k++ { // first row
 			if (*q)[0] == (*t)[k] {
 				wfaType, score = wfaMatch, 0
@@ -163,22 +171,22 @@ func (algn *Aligner) initComponents(q, t *[]byte) {
 	}
 }
 
-// ErrEmptySeq means one of the query or target sequence is empty
+// ErrEmptySeq means the query or target sequence is empty.
 var ErrEmptySeq error = fmt.Errorf("wfa: invalid empty sequence")
 
-// MaxSeqLen is the allowed longest sequence length
+// MaxSeqLen is the allowed longest sequence length.
 const MaxSeqLen int = 1<<(32-wfaTypeBits) - 1
 
-// ErrSeqTooLong means the sequence is too long
+// ErrSeqTooLong means the sequence is too long.
 var ErrSeqTooLong error = fmt.Errorf("wfa: sequences longer than %d are not supported", MaxSeqLen)
 
 // Align performs alignment with two sequences.
-func (algn *Aligner) Align(q, t []byte) (*CIGAR, error) {
+func (algn *Aligner) Align(q, t []byte) (*AlignmentResult, error) {
 	return algn.AlignPointers(&q, &t)
 }
 
 // AlignPointers performs alignment with two sequences. The arguments are pointers.
-func (algn *Aligner) AlignPointers(q, t *[]byte) (*CIGAR, error) {
+func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 	m, n := len(*t), len(*q)
 
 	if n == 0 || m == 0 {
@@ -225,19 +233,20 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*CIGAR, error) {
 		}
 
 		s++
+
 		// fmt.Printf("next:\n")
 		algn.next(q, t, s)
 	}
 
 	// M.Print(os.Stdout, "M")
 
+	// bottom right cell
 	minS, lastK := s, Ak
 	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
-	if !algn.opt.GlobalAlignment { // find the minimum score on the last line
+	if !algn.opt.GlobalAlignment { // find the minimum score on the last row/column
 		minS, lastK = algn.backtraceStartPosistion(q, t, s)
 		// fmt.Printf("new min s:%d, k:%d\n", minS, lastK)
 	}
-
 	// offset, _, _ = M.Get(minS, 0, lastK)
 	// h := offset
 	// v := h - uint32(lastK)
@@ -254,18 +263,21 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	lastK := Ak
 
 	var offset uint32
-	var ok, kInScope bool
+	var ok bool
 	var k int
 	var lastRowOrCol bool
 	var h, v int
 	var lo, hi int
+
+	// fmt.Printf("m: %d, n: %d\n", m, n)
+
 	for _s := s; _s >= 0; _s-- {
 		if !M.HasScore(_s) {
 			continue
 		}
 
 		lo, hi = M.KRange(_s, 0)
-		fmt.Printf("test s:%d, lo:%d, hi:%d\n", _s, lo, hi)
+		// fmt.Printf("test s:%d, lo:%d, hi:%d\n", _s, lo, hi)
 
 		lastRowOrCol = false
 		k = Ak
@@ -280,14 +292,14 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 				k--
 				continue
 			}
-			h = int(offset >> wfaTypeBits)
+			h = int(offset)
 			v = h - k
 
-			if v <= 0 {
+			if v <= 0 || v > n || h > m { // bound check
 				break
 			}
 
-			// fmt.Printf("  s: %d, offset:%d, k:%d, h:%d, v:%d\n", _s, offset>>wfaTypeBits, k, h, v)
+			// fmt.Printf("  s: %d, offset:%d, k:%d, h:%d, v:%d\n", _s, offset, k, h, v)
 			if (v == n && h >= n) || (h == m && v >= m) {
 				// fmt.Println("    ok", v == n && h >= n, h == m && v >= m)
 				lastRowOrCol = true
@@ -311,26 +323,18 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 			}
 
 			offset, _, ok = M.GetAfterDiff(_s, 0, k)
-			// fmt.Printf("  s: %d, k: %d, kInScope: %v\n", _s, k, kInScope)
-			if !kInScope {
-				if k == -1 {
-					k++ // try 0
-					continue
-				}
-				break
-			}
 			if !ok {
 				k++
 				continue
 			}
-			h = int(offset >> wfaTypeBits)
+			h = int(offset)
 			v = h - k
 
-			if v <= 0 {
+			if v <= 0 || v > n || h > m { // bound check
 				break
 			}
 
-			// fmt.Printf("  s: %d, offset:%d, k:%d, h:%d, v:%d\n", _s, offset>>wfaTypeBits, k, h, v)
+			// fmt.Printf("  s: %d, offset:%d, k:%d, h:%d, v:%d\n", _s, offset, k, h, v)
 			if (v == n && h >= n) || (h == m && v >= m) {
 				// fmt.Println("    ok", v == n && h >= n, h == m && v >= m)
 				lastRowOrCol = true
@@ -379,9 +383,9 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 			continue
 		}
 
-		h = int(offset)                      // x
-		v = h - k                            // y
-		if v < 0 || v >= lenQ || h >= lenT { // bound check
+		h = int(offset)                       // x
+		v = h - k                             // y
+		if v <= 0 || v >= lenQ || h >= lenT { // bound check
 			continue
 		}
 
@@ -406,7 +410,7 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 			}
 
 			// fmt.Printf("        block wise, %d matches\n", N)
-			wf.Add(k, uint32(N))
+			wf.Increase(k, uint32(N))
 
 			if !(n == 8 && v < lenQ && h < lenT) {
 				continue
@@ -431,7 +435,7 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 		}
 
 		// fmt.Printf("      byte wise: k: %d, extend to h: %d, v: %d\n", k, h, v)
-		wf.Add(k, uint32(N))
+		wf.Increase(k, uint32(N))
 	}
 
 	return lo, hi
@@ -675,7 +679,7 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 }
 
 // backTrace backtraces the alignment
-func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
+func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult {
 	semiGlobal := !algn.opt.GlobalAlignment
 	var M0 *Component
 	M := algn.M
@@ -685,7 +689,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *CIGAR {
 	lenQ := len(*q)
 	lenT := len(*t)
 
-	cigar := NewCIGAR()
+	cigar := NewAlignmentResult()
 	cigar.Score = s
 
 	var ok bool
@@ -787,11 +791,11 @@ LOOP:
 			} else {
 				fromItself = true
 			}
-			// fmt.Println(Isk, Dsk, v1, offset0)
 
 			M0 = M
 		}
 		if fromItself {
+			// fmt.Printf("  break as there's no valid source offset\n")
 			break
 		}
 		if offset0 == 0 {
@@ -808,13 +812,17 @@ LOOP:
 		hasMatch = false
 		if previousFromM {
 			nMatches = h - h0
-
 			// fmt.Printf("  fromM h0: %d, n:%d\n", h0, nMatches)
 
 			// record matches
 			hasMatch = false
 			if nMatches > 0 {
 				hasMatch = true
+				if firstMatch { // record the end position of matched region
+					firstMatch = false
+					cigar.TEnd, cigar.QEnd = h, v
+					// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
+				}
 
 				op = wfaOps[wfaMatch] // correct it as M
 				cigar.AddN(op, uint32(nMatches))
@@ -826,12 +834,6 @@ LOOP:
 
 			if hasMatch {
 				tBegin, qBegin = h, v // update the start position of matched region
-
-				if firstMatch { // record the end position of matched region
-					firstMatch = false
-					cigar.TEnd, cigar.QEnd = h, v
-					// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
-				}
 			}
 
 			// update coordinates with the offset before extention
@@ -851,12 +853,6 @@ LOOP:
 
 		if hasMatch {
 			tBegin, qBegin = h, v // update the start position of matched region
-
-			if firstMatch { // record the end position of matched region
-				firstMatch = false
-				cigar.TEnd, cigar.QEnd = h, v
-				// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
-			}
 		}
 
 		// record
@@ -914,19 +910,28 @@ LOOP:
 		// fmt.Printf("  NEXT s: %d, k: %d, h:%d, v:%d\n", s, k, h, v)
 	}
 
+	// -----------------------------------------------------------------------------
+	// the possible last one
+
 	// fmt.Printf("------\nexit loop. h:%d, v:%d\n", h, v)
 	if h > 0 && v > 0 {
 		nMatches = min(h, v) - 1
 		hasMatch = false
+		// fmt.Printf("nmatches: %d\n", nMatches)
 		if nMatches > 0 {
 			hasMatch = true
+			if firstMatch { // record the end position of matched region
+				firstMatch = false
+				cigar.TEnd, cigar.QEnd = h, v
+				// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
+			}
 
 			op = wfaOps[wfaMatch] // correct it as M
 			cigar.AddN(op, uint32(nMatches))
-			// fmt.Printf(" [ADD %s as match]: %d%c, h:%d, v:%d\n", wfaType2str(wfaType), nMatches, op, h, v)
+			// fmt.Printf("[ADD %s as match]: %d%c, h:%d, v:%d\n", wfaType2str(wfaType), nMatches, op, h, v)
 			h -= nMatches
 			v -= nMatches
-			// fmt.Printf("  h:%d, v:%d\n", h, v)
+			// fmt.Printf("h:%d, v:%d\n", h, v)
 
 		} else if wfaType == wfaMatch { // the last is match
 			// fmt.Printf("    n=0, but it's a match\n")
@@ -935,17 +940,11 @@ LOOP:
 
 		if hasMatch {
 			tBegin, qBegin = h, v // update the start position of matched region
-
-			if firstMatch { // record the end position of matched region
-				firstMatch = false
-				cigar.TEnd, cigar.QEnd = h, v
-				// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
-			}
 		}
 
 		op = wfaOps[wfaType]
 		cigar.AddN(op, 1)
-		// fmt.Printf("  [ADD]: %s as %d%c, h:%d, v:%d\n", wfaType2str(wfaType), 1, op, h, v)
+		//	fmt.Printf("  final [ADD]: %s as %d%c, h:%d, v:%d\n", wfaType2str(wfaType), 1, op, h, v)
 
 	}
 

@@ -4,6 +4,12 @@
 
 This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (maybe in the future).
 
+Implemented features:
+
+- Distance metrics: gap-affine.
+- Alignment types: global, semi-global.
+- Heuristics: wf-adaptive. 
+
 ## Table of Contents
 
 + [Details](#details)
@@ -15,29 +21,31 @@ This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (
 
 ## Details
 
-- A WFA component is saved with a 2-dimension (`s`, `k`) slice `[]*[]uint32`.
-    - Score `s` is the index of the outer slice `[]*[]uint32`. 
-      For non-existent scores, the pointer `*[]uint32` is `nil`.
-    - Diagonal `k` is the index of the inner slice `[]uint32`.
+- A WFA component is saved as a list of WaveFront `[]*WaveFront`.
+    - Score `s` is the index.
+    - If the value is `nil`, it means the score does not exsit.
+- A WaveFront is saved as a list of offsets `[]uint32`.
+  We preset 2048 values to avoid frequent `append` operation.
+    - Diagonal `k` is the index.
       To support negative `k` values, we use this layout:
 
-            index: 0,  1,  2,  3,  4,  5,  6
-            k:     0, -1,  1, -2,  2, -3,  3
+          index: 0,  1,  2,  3,  4,  5,  6
+          k:     0, -1,  1, -2,  2, -3,  3
 
       Value `0` means the `k` does not exist.
 
     - Offsets are saved with `uint32` integers, with the lower 3 bits for
-      saving 5 possible paths which are used for backtrace. (it's unnecessary, will remove in this next version).
+      saving 5 possible paths which are used for backtrace.
 
-            wfaInsertOpen uint32 = iota + 1
-            wfaInsertExt
-            wfaDeleteOpen
-            wfaDeleteExt
-            wfaMismatch
-            wfaMatch // only for backtrace, not saved in the component
+          wfaInsertOpen uint32 = iota + 1
+          wfaInsertExt
+          wfaDeleteOpen
+          wfaDeleteExt
+          wfaMismatch
+          wfaMatch // only for backtrace, not saved in the component
 
-- Maximum sequence length: `536,870,911` (1<<(32-3) - 1)
-- All objects are saved in object pool for computation efficiency.
+- Maximum sequence length: 512 Mb, `536,870,911` (1<<(32-3) - 1).
+- All objects are saved in object pools for computation efficiency.
   Just don't forget to recycle them.
 
 ## Examples
@@ -136,7 +144,7 @@ q := []byte("ACCATACTCG")
 t := []byte("AGGATGCTCG")
 
 // align
-cigar, err := algn.Align(&q, &t)
+result, err := algn.Align(&q, &t)
 checkErr(err)
 
 // score table of M
@@ -144,27 +152,27 @@ algn.Plot(&q, &t, os.Stdout, algn.M, true)
 
 if outputAlignment {
     fmt.Println()
-    fmt.Printf("CIGAR:  %s\n", cigar.CIGAR())
+    fmt.Printf("CIGAR:  %s\n", result.CIGAR())
 
-    Q, A, T := cigar.Alignment(&q, &t)
+    Q, A, T := result.AlignmentText(&q, &t)
     fmt.Printf("query   %s\n", *Q)
     fmt.Printf("        %s\n", *A)
     fmt.Printf("target  %s\n", *T)
 
     fmt.Println()
-    fmt.Printf("align-score : %d\n", cigar.Score)
+    fmt.Printf("align-score : %d\n", result.Score)
     fmt.Printf("align-region: q[%d, %d] vs t[%d, %d]\n",
-        cigar.QBegin, cigar.QEnd, cigar.TBegin, cigar.TEnd)
+        result.QBegin, result.QEnd, result.TBegin, result.TEnd)
     fmt.Printf("align-length: %d, matches: %d (%.2f%%), gaps: %d, gapRegions: %d\n",
-        cigar.AlignLen, cigar.Matches, float64(cigar.Matches)/float64(cigar.AlignLen)*100,
-        cigar.Gaps, cigar.GapRegions)
+        result.AlignLen, result.Matches, float64(result.Matches)/float64(result.AlignLen)*100,
+        result.Gaps, result.GapRegions)
     fmt.Println()
 
     
-    wfa.RecycleAlignment(Q, A, T) // !! important, recycle objects
+    wfa.RecycleAlignmentText(Q, A, T) // !! important, recycle objects
 }
 
-wfa.RecycleCIGAR(cigar) // !! important, recycle objects
+wfa.RecycleAlignmentResult(result) // !! important, recycle objects
 
 // ------------------[ clean ]------------------
 
@@ -219,7 +227,7 @@ Options/Flags:
 
 ## Benchmark
 
-Generate datasets with WFA2-lib (v2.3.5):
+Generate datasets with WFA (e634175) and WFA2-lib (v2.3.5):
 
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.05 -o l1000-e0.05.seq
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.10 -o l1000-e0.10.seq
@@ -229,23 +237,29 @@ Commands:
 
     # memusg: https://github.com/shenwei356/memusg
 
-    # WFA2-lib
+    # WFA / WFA2-lib
     memusg -t -s "./bin/align_benchmark -i l1000-e0.05.seq  -a gap-affine-wfa"
 
-    # WFA-go (this package)
+    # WFA-go (this package, binary files are availabe in the release page)
     # global alignment && do not output results
-    memusg -t -s "go run ./benchmark/wfa-go.go -N -i /home/shenwei/Downloads/WFA2-lib/l1000-e0.05.seq"
+    memusg -t -s "wfa-go -N -i l1000-e0.05.seq"
+
+
+    csvtk csv2md -t benchmark.tsv -a c,c,c,l,r,r
 
 Results:
 
-|Seq-len|Seq-num|Error-rate|Package |Time   |Memory   |
-|:-----:|:-----:|:--------:|:-------|:-----:|--------:|
-|1000   |100000 |0.05      |WFA2-lib|5.762s |4.79 MB  |
-|       |       |          |WFA-go  |1m:38s |104.33 MB|
-|1000   |100000 |0.10      |WFA2-lib|14.762s|8.04 MB  |
-|       |       |          |WFA-go  |5m:14s |72.87 MB |
-|1000   |100000 |0.20      |WFA2-lib|47.714s|9.27 MB  |
-|       |       |          |WFA-go  |14m:56s|71.31 MB |
+|Seq-len|Seq-num|Error-rate|Package|Time    |Memory  |
+|:-----:|:-----:|:--------:|:------|-------:|-------:|
+|1000   |100000 |0.05      |WFA1   |6.122s  |3.17 MB |
+|       |       |          |WFA2   |5.332s  |5.65 MB |
+|       |       |          |WFA-go |51.742s |15.71 MB|
+|1000   |100000 |0.10      |WFA1   |14.881s |3.07 MB |
+|       |       |          |WFA2   |13.683s |6.61 MB |
+|       |       |          |WFA-go |192.000s|23.84 MB|
+|1000   |100000 |0.20      |WFA1   |45.290s |6.72 MB |
+|       |       |          |WFA2   |41.453s |9.09 MB |
+|       |       |          |WFA-go |527.000s|33.77 MB|
 
 
 ## Reference

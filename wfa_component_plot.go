@@ -26,7 +26,7 @@ import (
 	"sync"
 )
 
-// Plot plots one WFA component a text table.
+// Plot plots one WFA component as a tab-delimited text table.
 //
 // A table cell contains the alignment type symbol and the score.
 // Symbols:

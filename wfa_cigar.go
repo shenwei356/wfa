@@ -26,13 +26,13 @@ import (
 	"sync"
 )
 
-// CIGAR represent a CIGAR structure.
-type CIGAR struct {
+// AlignmentResult represent a AlignmentResult structure.
+type AlignmentResult struct {
 	Ops   []*CIGARRecord
 	Score uint32 // Alignment score
 
-	TBegin, TEnd int // 0-based location of the alignment in target seq, no including flanking clipping/insertion sequences
-	QBegin, QEnd int // 0-based location of the alignment in query seq, no including flanking clipping/insertion sequences
+	TBegin, TEnd int // 1-based location of the alignment in target seq, no including flanking clipping/insertion sequences
+	QBegin, QEnd int // 1-based location of the alignment in query seq, no including flanking clipping/insertion sequences
 
 	// Stats of the aligned region, no including flanking clipping/insertion sequences
 	AlignLen   uint32
@@ -49,15 +49,15 @@ type CIGARRecord struct {
 	Op byte
 }
 
-// NewCIGAR returns a new CIGAR from the object pool.
-func NewCIGAR() *CIGAR {
-	cigar := poolCIGAR.Get().(*CIGAR)
+// NewAlignmentResult returns a new CIGAR from the object pool.
+func NewAlignmentResult() *AlignmentResult {
+	cigar := poolCIGAR.Get().(*AlignmentResult)
 	cigar.reset()
 	return cigar
 }
 
 // reset resets a CIGAR.
-func (cigar *CIGAR) reset() {
+func (cigar *AlignmentResult) reset() {
 	for _, r := range cigar.Ops {
 		poolCIGARRecord.Put(r)
 	}
@@ -71,8 +71,8 @@ func (cigar *CIGAR) reset() {
 	cigar.GapRegions = 0
 }
 
-// RecycleCIGAR recycles a CIGAR object.
-func RecycleCIGAR(cigar *CIGAR) {
+// RecycleAlignmentResult recycles a CIGAR object.
+func RecycleAlignmentResult(cigar *AlignmentResult) {
 	if cigar != nil {
 		poolCIGAR.Put(cigar)
 	}
@@ -80,7 +80,7 @@ func RecycleCIGAR(cigar *CIGAR) {
 
 // object pool of a CIGAR.
 var poolCIGAR = &sync.Pool{New: func() interface{} {
-	cigar := CIGAR{
+	cigar := AlignmentResult{
 		Ops: make([]*CIGARRecord, 0, 128),
 	}
 	return &cigar
@@ -92,12 +92,12 @@ var poolCIGARRecord = &sync.Pool{New: func() interface{} {
 }}
 
 // Add adds a new record in backtrace.
-func (cigar *CIGAR) Add(op byte) {
+func (cigar *AlignmentResult) Add(op byte) {
 	cigar.AddN(op, 1)
 }
 
 // Add adds a new record in backtrace and set its number as n.
-func (cigar *CIGAR) AddN(op byte, n uint32) {
+func (cigar *AlignmentResult) AddN(op byte, n uint32) {
 	r := poolCIGARRecord.Get().(*CIGARRecord)
 	r.Op = op
 	r.N = n
@@ -105,15 +105,15 @@ func (cigar *CIGAR) AddN(op byte, n uint32) {
 }
 
 // Update updates the last record.
-func (cigar *CIGAR) Update(n uint32) {
+func (cigar *AlignmentResult) Update(n uint32) {
 	l := len(cigar.Ops)
 	if l > 0 {
 		cigar.Ops[l-1].N += n
 	}
 }
 
-// process processes the data
-func (cigar *CIGAR) process() {
+// process processes the data.
+func (cigar *AlignmentResult) process() {
 	if cigar.proccessed {
 		return
 	}
@@ -192,8 +192,8 @@ func (cigar *CIGAR) process() {
 	cigar.proccessed = true
 }
 
-// CIGAR returns the CIGAR string
-func (cigar *CIGAR) CIGAR() string {
+// CIGAR returns the CIGAR string.
+func (cigar *AlignmentResult) CIGAR() string {
 	cigar.process()
 	buf := poolBytesBuffer.Get().(*bytes.Buffer)
 	buf.Reset()
@@ -208,9 +208,9 @@ func (cigar *CIGAR) CIGAR() string {
 	return text
 }
 
-// CIGAR returns the formated alignment strings for Query, Alignment, and Target.
-// Do not forget to recycle them with RecycleAlignment().
-func (cigar *CIGAR) Alignment(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
+// AlignmentText returns the formated alignment text for Query, Alignment, and Target.
+// Do not forget to recycle them with RecycleAlignmentText().
+func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
 	cigar.process()
 
 	Q := poolBytes.Get().(*[]byte)
@@ -274,8 +274,8 @@ var poolBytes = &sync.Pool{New: func() interface{} {
 	return &buf
 }}
 
-// RecycleAlignment recycle alignment strings
-func RecycleAlignment(Q, A, T *[]byte) {
+// RecycleAlignmentText recycle alignment text.
+func RecycleAlignmentText(Q, A, T *[]byte) {
 	if Q != nil {
 		*Q = (*Q)[:0]
 		poolBytes.Put(Q)
