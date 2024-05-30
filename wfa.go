@@ -927,16 +927,22 @@ LOOP:
 			v -= nMatches
 			// fmt.Printf("h:%d, v:%d\n", h, v)
 
-			tBegin, qBegin = h+1, v+1
-			// fmt.Printf("  -- update start position: h:%d, v:%d\n", h+1, v+1)
+			// update the start position of matched region
+			if wfaType == wfaMatch { // first line/row
+				tBegin, qBegin = h, v
+				// fmt.Printf("  -- update start position: h:%d, v:%d\n", h, v)
+			} else if nMatches > 0 {
+				tBegin, qBegin = h+1, v+1
+				// fmt.Printf("  -- update start position: h:%d, v:%d\n", h+1, v+1)
+			}
 		} else if wfaType == wfaMatch { // first line/row
 			tBegin, qBegin = h, v
+			// fmt.Printf("  --b update start position: h:%d, v:%d\n", h, v)
 			if firstMatch { // record the end position of matched region
 				firstMatch = false
 				cigar.TEnd, cigar.QEnd = h, v
 				// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
 			}
-			// fmt.Printf("  -- update start position: h:%d, v:%d\n", h, v)
 		}
 
 		op = wfaOps[wfaType]

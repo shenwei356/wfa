@@ -28,6 +28,7 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 
 ## Table of Contents
 
++ [History](#history)
 + [Details](#details)
 + [Examples](#examples)
 + [Usages](#usages)
@@ -35,13 +36,30 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 + [Benchmark](#benchmark)
 + [Reference](#reference)
 
+## History
+
+1. I need a fast DNA alignment package in Golang for my project.
+1. WFA "looks easy" to implement as it does not heavily reply on SIMD intrinsics,
+   though there are some other algorithms performing well in [a benchmark](https://github.com/rchikhi/rust-alignbench).
+1. I'm not familiar with C++, and I found it difficult to understand the official code.
+   I only found [one](https://github.com/cschin/wavefront-aln) (in Rust) 3rd party implementation.
+1. After reading the WFA paper, I thought the algorithm is easy, so I implemented WFA from the scratch.
+1. Later I found it not easy, there were so many details.
+   After reading the `next` step in the rust version, I realised it's because I don't know gap-affine penalties.
+1. The `backtrace` step is the most difficult part. In v0.1.0, I used 3 extra components to store the source offsets
+   for each cell in I, D, M components. But it needs more memory. And the speed is also not ideal, 1/20 of official version.
+    - Besides, I checked the bases again when tracing back matches. WFA did this too, but WFA2 did not.
+1. Next, aftering reading thofficial implee mentation, I rewrote the whole project, using similar backtrace workfow with WFA2.
+   The speed increased to 1/10 of the official version.
+1. C++ is wild, it even support accessing list/array elements with negative indexes ([the diagonal k](https://github.com/smarco/WFA2-lib/issues/94)).
+
 ## Details
 
 - A WFA component is saved as a list of WaveFront `[]*WaveFront`.
     - Score `s` is the index.
     - If the value is `nil`, it means the score does not exsit.
 - A WaveFront is saved as a list of offsets `[]uint32`.
-  We preset 2048 values to avoid frequent `append` operation.
+  We preset the list with a big length (2048) to avoid frequent `append` operations.
     - Diagonal `k` is the index.
       To support negative `k` values, we use this layout:
 
@@ -63,6 +81,7 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 - Maximum sequence length: 512 Mb, `536,870,911` (1<<(32-3) - 1).
 - All objects are saved in object pools for computation efficiency.
   Just don't forget to recycle them.
+
 
 ## Examples
 
@@ -276,11 +295,15 @@ Options/Flags:
 
 ## Benchmark
 
-Generate datasets with WFA (e634175) and WFA2-lib (v2.3.5):
+Generate datasets with WFA (e634175) or WFA2-lib (v2.3.5):
 
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.05 -o l1000-e0.05.seq
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.10 -o l1000-e0.10.seq
     ./bin/generate_dataset -n 100000 -l 1000 -e 0.20 -o l1000-e0.20.seq
+
+    ./bin/generate_dataset -n 500 -l 50000 -e 0.05 -o l50000-e0.05.seq
+    ./bin/generate_dataset -n 500 -l 50000 -e 0.10 -o l50000-e0.10.seq
+    ./bin/generate_dataset -n 500 -l 50000 -e 0.20 -o l50000-e0.20.seq
 
 Commands:
 
@@ -298,24 +321,36 @@ Commands:
 
 Results:
 
-|Seq-len|Seq-num|Error-rate|Package|Time    |Memory  |
-|:-----:|:-----:|:--------:|:------|-------:|-------:|
-|1000   |100000 |0.05      |WFA1   |6.122s  |3.17 MB |
-|       |       |          |WFA2   |5.332s  |5.65 MB |
-|       |       |          |WFA-go |51.742s |15.71 MB|
-|1000   |100000 |0.10      |WFA1   |14.881s |3.07 MB |
-|       |       |          |WFA2   |13.683s |6.61 MB |
-|       |       |          |WFA-go |192.000s|23.84 MB|
-|1000   |100000 |0.20      |WFA1   |45.290s |6.72 MB |
-|       |       |          |WFA2   |41.453s |9.09 MB |
-|       |       |          |WFA-go |527.000s|33.77 MB|
+|Seq-len|Seq-num|Error-rate|Package|Time    |Memory   |
+|:-----:|:-----:|:--------:|:------|-------:|--------:|
+|1000   |100000 |0.05      |WFA1   |6.122s  |3.17 MB  |
+|       |       |          |WFA2   |5.332s  |5.65 MB  |
+|       |       |          |WFA-go |51.742s |15.71 MB |
+|1000   |100000 |0.10      |WFA1   |14.881s |3.07 MB  |
+|       |       |          |WFA2   |13.683s |6.61 MB  |
+|       |       |          |WFA-go |192.000s|23.84 MB |
+|1000   |100000 |0.20      |WFA1   |45.290s |6.72 MB  |
+|       |       |          |WFA2   |41.453s |9.09 MB  |
+|       |       |          |WFA-go |527.000s|33.77 MB |
+|50000  |500    |0.05      |WFA1   |1m:06s  |745.68 MB|
+|       |       |          |WFA2   |1m:04s  |720.57 MB|
+|       |       |          |WFA-go |11m:29s |2.58 GB  |
+|50000  |500    |0.10      |WFA1   |4m:03s  |2.34 GB  |
+|       |       |          |WFA2   |3m:43s  |2.34 GB  |
+|       |       |          |WFA-go |/       |/        |
+|50000  |500    |0.20      |WFA1   |9m:51s  |6.81 GB  |
+|       |       |          |WFA2   |9m:39s  |6.86 GB  |
+|       |       |          |WFA-go |/       |/        |
 
+Run in a laptop PC, with single-thread.
 
 ## Reference
 
 - **Santiago Marco-Sola, Juan Carlos Moure, Miquel Moreto, Antonio Espinosa**. ["Fast gap-affine pairwise alignment using the wavefront algorithm."](https://doi.org/10.1093/bioinformatics/btaa777) Bioinformatics, 2020.
+**Santiago Marco-Sola, Jordan M Eizenga, Andrea Guarracino, Benedict Paten, Erik Garrison, Miquel Moreto**. ["Optimal gap-affine alignment in O(s) space"](https://doi.org/10.1093/bioinformatics/btad074). Bioinformatics, 2023.
 - https://github.com/smarco/WFA-paper/
 - https://github.com/smarco/WFA2-lib
+- https://github.com/rchikhi/rust-alignbench
 
 ## Support
 

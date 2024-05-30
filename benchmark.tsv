@@ -8,3 +8,12 @@ Seq-len	Seq-num	Error-rate	Package	Time	Memory
 1000	100000	0.20	WFA1	45.290s	6.72 MB
 			WFA2	41.453s	9.09 MB
 			WFA-go	527.000s	33.77 MB
+50000	500	0.05	WFA1	1m:06s	745.68 MB
+			WFA2	1m:04s	720.57 MB
+			WFA-go	11m:29s	2.58 GB
+50000	500	0.10	WFA1	4m:03s	2.34 GB
+			WFA2	3m:43s	2.34 GB
+			WFA-go	/	/
+50000	500	0.20	WFA1	9m:51s	6.81 GB
+			WFA2	9m:39s	6.86 GB
+			WFA-go	/	/
