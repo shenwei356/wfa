@@ -703,7 +703,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	var fromMI, fromMD, fromItself bool
 	var fromI, fromD, fromM bool
 	var sMismatch, sGapOpen, sGapExt uint32
-	var previousFromM, hasMatch bool
+	var previousFromM bool
 	var nMatches int
 
 	k = Ak
@@ -809,15 +809,12 @@ LOOP:
 		// 	wfaType2str(wfaType), h0, h-h0)
 
 		// traceback matches
-		hasMatch = false
 		if previousFromM {
 			nMatches = h - h0
 			// fmt.Printf("  fromM h0: %d, n:%d\n", h0, nMatches)
 
 			// record matches
-			hasMatch = false
 			if nMatches > 0 {
-				hasMatch = true
 				if firstMatch { // record the end position of matched region
 					firstMatch = false
 					cigar.TEnd, cigar.QEnd = h, v
@@ -827,13 +824,6 @@ LOOP:
 				op = wfaOps[wfaMatch] // correct it as M
 				cigar.AddN(op, uint32(nMatches))
 				// fmt.Printf("    [ADD %s as match]: %d%c, h:%d, v:%d\n", wfaType2str(wfaType), nMatches, op, h, v)
-			} else if wfaType == wfaMatch { // the last is match
-				// fmt.Printf("    n=0, but it's a match\n")
-				hasMatch = true
-			}
-
-			if hasMatch {
-				tBegin, qBegin = h, v // update the start position of matched region
 			}
 
 			// update coordinates with the offset before extention
@@ -842,17 +832,19 @@ LOOP:
 			v = h - k
 			// fmt.Printf("  update h:%d, v:%d\n", h, v)
 
+			// update the start position of matched region
+			if wfaType == wfaMatch { // first line/row
+				tBegin, qBegin = h, v
+				// fmt.Printf("  -- update start position: h:%d, v:%d\n", h, v)
+			} else if nMatches > 0 {
+				tBegin, qBegin = h+1, v+1
+				// fmt.Printf("  -- update start position: h:%d, v:%d\n", h+1, v+1)
+			}
+
 			if h <= 0 || v <= 0 {
 				// fmt.Printf("  break as h<=0 || v <=0\n")
 				break
 			}
-		} else if wfaType == wfaMatch { // the last is match
-			// fmt.Printf("    n=0, but it's a match\n")
-			hasMatch = true
-		}
-
-		if hasMatch {
-			tBegin, qBegin = h, v // update the start position of matched region
 		}
 
 		// record
@@ -911,15 +903,13 @@ LOOP:
 	}
 
 	// -----------------------------------------------------------------------------
-	// the possible last one
+	// the last one
 
 	// fmt.Printf("------\nexit loop. h:%d, v:%d\n", h, v)
 	if h > 0 && v > 0 {
 		nMatches = min(h, v) - 1
-		hasMatch = false
 		// fmt.Printf("nmatches: %d\n", nMatches)
 		if nMatches > 0 {
-			hasMatch = true
 			if firstMatch { // record the end position of matched region
 				firstMatch = false
 				cigar.TEnd, cigar.QEnd = h, v
@@ -933,19 +923,21 @@ LOOP:
 			v -= nMatches
 			// fmt.Printf("h:%d, v:%d\n", h, v)
 
-		} else if wfaType == wfaMatch { // the last is match
-			// fmt.Printf("    n=0, but it's a match\n")
-			hasMatch = true
-		}
-
-		if hasMatch {
-			tBegin, qBegin = h, v // update the start position of matched region
+			tBegin, qBegin = h+1, v+1
+			// fmt.Printf("  -- update start position: h:%d, v:%d\n", h+1, v+1)
+		} else if wfaType == wfaMatch { // first line/row
+			tBegin, qBegin = h, v
+			if firstMatch { // record the end position of matched region
+				firstMatch = false
+				cigar.TEnd, cigar.QEnd = h, v
+				// fmt.Printf("    == end position of matched region, t:%d, q:%d\n", h, v)
+			}
+			// fmt.Printf("  -- update start position: h:%d, v:%d\n", h, v)
 		}
 
 		op = wfaOps[wfaType]
 		cigar.AddN(op, 1)
 		//	fmt.Printf("  final [ADD]: %s as %d%c, h:%d, v:%d\n", wfaType2str(wfaType), 1, op, h, v)
-
 	}
 
 	if v > 1 {

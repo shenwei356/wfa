@@ -121,9 +121,10 @@ Options/Flags:
 			fmt.Fprintf(outfh, "        %s\n", *A)
 			fmt.Fprintf(outfh, "target  %s\n", *T)
 			fmt.Fprintf(outfh, "cigar   %s\n", result.CIGAR())
+			fmt.Fprintln(outfh)
 			fmt.Fprintf(outfh, "align-score : %d\n", result.Score)
-			fmt.Fprintf(outfh, "matched-region: q[%d, %d] vs t[%d, %d]\n",
-				result.QBegin, result.QEnd, result.TBegin, result.TEnd)
+			fmt.Fprintf(outfh, "match-region: q[%d, %d]/%d vs t[%d, %d]/%d\n",
+				result.QBegin, result.QEnd, len(_q), result.TBegin, result.TEnd, len(_t))
 			fmt.Fprintf(outfh, "align-length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
 				result.AlignLen, result.Matches, float64(result.Matches)/float64(result.AlignLen)*100,
 				result.Gaps, result.GapRegions)
@@ -140,7 +141,7 @@ Options/Flags:
 
 	if *infile == "" {
 		if flag.NArg() != 2 {
-			checkError(fmt.Errorf("if flag -i not given, please give me two sequences"))
+			checkError(fmt.Errorf("if flag -i not given, please give me two sequences. type \"%s -h\" for help.", app))
 		}
 		q = flag.Arg(0)
 		t = flag.Arg(1)

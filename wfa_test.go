@@ -107,8 +107,8 @@ func TestWFA(_t *testing.T) {
 	// t = []byte("CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGACCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCAGTGATTAAAC")
 
 	// distant sequences
-	// q = []byte("GAGTGGTTAGCTCGAAGCCCA")
-	// t = []byte("TACGTGAAGCAGTGATTAAAC")
+	q = []byte("GAGTGGTTAGCTCGAAGCCCA")
+	t = []byte("TACGTGAAGCAGTGATTAAAC")
 
 	// q = []byte("ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA")
 	// t = []byte("GATTGGAAAATAGGATGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTGCTCGAAGCCCA")
@@ -164,8 +164,8 @@ func TestWFA(_t *testing.T) {
 
 		fmt.Println()
 		fmt.Printf("align-score : %d\n", result.Score)
-		fmt.Printf("align-region: q[%d, %d] vs t[%d, %d]\n",
-			result.QBegin, result.QEnd, result.TBegin, result.TEnd)
+		fmt.Printf("match-region: q[%d, %d]/%d vs t[%d, %d]/%d\n",
+			result.QBegin, result.QEnd, len(q), result.TBegin, result.TEnd, len(t))
 		fmt.Printf("align-length: %d, matches: %d (%.2f%%), gaps: %d, gapRegions: %d\n",
 			result.AlignLen, result.Matches, float64(result.Matches)/float64(result.AlignLen)*100,
 			result.Gaps, result.GapRegions)

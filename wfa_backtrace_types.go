@@ -31,7 +31,7 @@ const (
 	wfaDeleteOpen
 	wfaDeleteExt
 	wfaMismatch
-	wfaMatch // only for backtrace, not saved in the component
+	wfaMatch // only for first row/column
 )
 
 var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'} // for backtrace

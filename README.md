@@ -2,7 +2,8 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/shenwei356/wfa.svg)](https://pkg.go.dev/github.com/shenwei356/wfa)
 
-This golang packages implements Wavefront alignment algorithm (WFA), not BiWFA (maybe in the future).
+This golang packages implements [Wavefront alignment algorithm (WFA)](https://doi.org/10.1093/bioinformatics/btaa777),
+not [BiWFA](https://doi.org/10.1093/bioinformatics/btad074) (maybe in the future).
 
 Implemented features:
 
@@ -35,14 +36,14 @@ Implemented features:
       Value `0` means the `k` does not exist.
 
     - Offsets are saved with `uint32` integers, with the lower 3 bits for
-      saving 5 possible paths which are used for backtrace.
+      saving 6 possible paths which are used for backtrace.
 
           wfaInsertOpen uint32 = iota + 1
           wfaInsertExt
           wfaDeleteOpen
           wfaDeleteExt
           wfaMismatch
-          wfaMatch // only for backtrace, not saved in the component
+          wfaMatch
 
 - Maximum sequence length: 512 Mb, `536,870,911` (1<<(32-3) - 1).
 - All objects are saved in object pools for computation efficiency.
@@ -194,7 +195,7 @@ WFA alignment in Golang
 
  Author: Wei Shen <shenwei356@gmail.com>
    Code: https://github.com/shenwei356/wfa
-Version: v0.1.0
+Version: v0.2.0
 
 Input file format:
   see https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests

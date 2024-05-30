@@ -8,6 +8,5 @@
 .Rhistory
 t.*
 
-wfa-go
-benchmark/benchmark
-benchmark/binaries
+wfa-go/wfa-go
+wfa-go/binaries
