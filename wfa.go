@@ -269,10 +269,14 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	var h, v int
 	var lo, hi int
 
+	// algn.Plot(q, t, os.Stdout, algn.M, true, -1)
 	// fmt.Printf("m: %d, n: %d\n", m, n)
 
 	for _s := s; _s >= 0; _s-- {
 		if !M.HasScore(_s) {
+			if _s == 0 {
+				break
+			}
 			continue
 		}
 

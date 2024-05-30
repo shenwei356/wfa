@@ -2,7 +2,7 @@
 
 [![Go Reference](https://pkg.go.dev/badge/github.com/shenwei356/wfa.svg)](https://pkg.go.dev/github.com/shenwei356/wfa)
 
-This golang packages implements [Wavefront alignment algorithm (WFA)](https://doi.org/10.1093/bioinformatics/btaa777),
+This golang package implements [Wavefront alignment algorithm (WFA)](https://doi.org/10.1093/bioinformatics/btaa777),
 not [BiWFA](https://doi.org/10.1093/bioinformatics/btad074) (maybe in the future).
 
 Implemented features:
@@ -10,6 +10,21 @@ Implemented features:
 - Distance metrics: gap-affine.
 - Alignment types: global, semi-global.
 - Heuristics: wf-adaptive. 
+
+Executable binaries for common operating systems are available to [download](https://github.com/shenwei356/wfa/releases),
+for benchmarking with lots of sequences, or for fast aligning two sequences in the command line.
+
+```
+$ wfa-go -g "Bioinformatics helps Biology" "We learn bioinformatics to help biologists"
+query   ---------Bioinformatics ---helps Biology---
+                  ||||||||||||||   |||| | |||||
+target  We learn bioinformatics to help- biologists
+cigar   9I1X14M3I4M1D1M1X5M1X3I
+
+align-score : 32
+match-region: q[2, 27]/28 vs t[11, 38]/42
+align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
+```
 
 ## Table of Contents
 
@@ -183,9 +198,42 @@ wfa.RecycleAligner(algn) // !! important, recycle objects
 
 ## CLI
 
-A [CLI](https://github.com/shenwei356/wfa/blob/main/benchmark/wfa-go.go) is available to
+A [CLI](https://github.com/shenwei356/wfa/blob/main/wfa-go/wfa-go.go)
+(download [binaries](https://github.com/shenwei356/wfa/releases)) is available to
 align two sequences from either positional arguments or an input file
 ([format](https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests)).
+
+<details>
+<summary>Example</summary>
+
+Fast alignment.
+
+```
+$ wfa-go AGCTAGTGTCAATGGCTACTTTTCAGGTCCT AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT
+query   AGCTA-GTGTCAATGGCTACT---TTTCAGGTCCT
+        | ||| |||||  ||||||||   | |||||||||
+target  AACTAAGTGTCGGTGGCTACTATATATCAGGTCCT
+cigar   1M1X3M1I5M2X8M3I1M1X9M
+
+align-score : 36
+match-region: q[1, 31]/31 vs t[1, 35]/35
+align-length: 35, matches: 27 (77.14%), gaps: 4, gap regions: 2
+```
+
+From a input file, for benchmark.
+
+```
+$ wfa-go -i seqs.txt
+query   A-TTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
+          |||||||||||||| ||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||| ||||||||||||
+target  GATTGGAAAATAGGAT-GGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTT-GTCGTCCTTACGTTTCCGGAAGGGAGTGGTT-GCTCGAAGCCCA
+cigar   1X1I14M1D39M1D31M1D12M
+
+align-score : 36
+match-region: q[2, 100]/100 vs t[3, 98]/98
+align-length: 99, matches: 96 (96.97%), gaps: 3, gap regions: 3
+```
+</details>
 
 <details>
 <summary>Usage</summary>
