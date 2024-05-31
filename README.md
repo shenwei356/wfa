@@ -49,7 +49,7 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 1. The `backtrace` step is the most difficult part. In v0.1.0, I used 3 extra components to store the source offsets
    for each cell in I, D, M components. But it needs more memory. And the speed is also not ideal, 1/20 of official version.
     - Besides, I checked the bases again when tracing back matches. WFA did this too, but WFA2 did not.
-1. Next, aftering reading thofficial implee mentation, I rewrote the whole project, using similar backtrace workfow with WFA2.
+1. Next, aftering reading thofficial implementation, I rewrote the whole project, using similar backtrace workfow with WFA2.
    The speed increased to 1/10 of the official version.
 1. C++ is wild, it even support accessing list/array elements with negative indexes ([the diagonal k](https://github.com/smarco/WFA2-lib/issues/94)).
 
@@ -179,7 +179,7 @@ q := []byte("ACCATACTCG")
 t := []byte("AGGATGCTCG")
 
 // align
-result, err := algn.Align(&q, &t)
+result, err := algn.Align(q, t)
 checkErr(err)
 
 // score table of M
@@ -347,7 +347,7 @@ Run in a laptop PC, with single-thread.
 ## Reference
 
 - **Santiago Marco-Sola, Juan Carlos Moure, Miquel Moreto, Antonio Espinosa**. ["Fast gap-affine pairwise alignment using the wavefront algorithm."](https://doi.org/10.1093/bioinformatics/btaa777) Bioinformatics, 2020.
-**Santiago Marco-Sola, Jordan M Eizenga, Andrea Guarracino, Benedict Paten, Erik Garrison, Miquel Moreto**. ["Optimal gap-affine alignment in O(s) space"](https://doi.org/10.1093/bioinformatics/btad074). Bioinformatics, 2023.
+- **Santiago Marco-Sola, Jordan M Eizenga, Andrea Guarracino, Benedict Paten, Erik Garrison, Miquel Moreto**. ["Optimal gap-affine alignment in O(s) space"](https://doi.org/10.1093/bioinformatics/btad074). Bioinformatics, 2023.
 - https://github.com/smarco/WFA-paper/
 - https://github.com/smarco/WFA2-lib
 - https://github.com/rchikhi/rust-alignbench
