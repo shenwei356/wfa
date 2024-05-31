@@ -184,7 +184,7 @@ func (cpt *Component) GetRawAfterDiff(s uint32, diff uint32, k int) (uint32, boo
 
 // Delete delete an offset of a s and k.
 func (cpt *Component) Delete(s uint32, k int) {
-	if s >= uint32(len(cpt.WaveFronts)) {
+	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
 		return
 	}
 	cpt.WaveFronts[s].Delete(k)
