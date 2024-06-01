@@ -133,7 +133,7 @@ func (wf *WaveFront) Increase(k int, delta uint32) {
 
 // Get returns offset, wfaType, existed.
 func (wf *WaveFront) Get(k int) (uint32, uint32, bool) {
-	if !(k >= wf.Lo && k <= wf.Hi) { // check k range
+	if k < wf.Lo || k > wf.Hi { // check k range
 		return 0, 0, false
 	}
 	offset := wf.Offsets[k2i(k)]
@@ -142,7 +142,7 @@ func (wf *WaveFront) Get(k int) (uint32, uint32, bool) {
 
 // GetRaw returns "offset<<wfaTypeBits |  wfaType", existed.
 func (wf *WaveFront) GetRaw(k int) (uint32, bool) {
-	if !(k >= wf.Lo && k <= wf.Hi) { // check k range
+	if k < wf.Lo || k > wf.Hi { // check k range
 		return 0, false
 	}
 	offset := wf.Offsets[k2i(k)]
@@ -151,7 +151,7 @@ func (wf *WaveFront) GetRaw(k int) (uint32, bool) {
 
 // Delete delete an offset of a k.
 func (wf *WaveFront) Delete(k int) {
-	if !(k >= wf.Lo && k <= wf.Hi) { // check k range
+	if k < wf.Lo || k > wf.Hi { // check k range
 		return
 	}
 	wf.Offsets[k2i(k)] = 0
