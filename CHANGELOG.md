@@ -1,7 +1,7 @@
 # Changelog
 
 - v0.2.2
-    - fix a concurrency bug when using multiple aligner.
+    - fix a concurrency bug when using multiple aligners.
 - v0.2.1
     - fix missing of bounds checking in adaptive reduction.
 - v0.2.0
