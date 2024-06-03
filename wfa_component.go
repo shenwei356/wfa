@@ -45,12 +45,8 @@ type Component struct {
 func NewComponent() *Component {
 	cpt := poolComponent.Get().(*Component)
 	cpt.IsM = false
-	for i, wf := range cpt.WaveFronts {
-		if wf != nil {
-			RecycleWaveFront(wf)
-			cpt.WaveFronts[i] = nil // reset it to nil
-		}
-	}
+
+	cpt.Reset()
 
 	cpt.WaveFronts = cpt.WaveFronts[:WAVEFRONTS_BASE_SIZE]
 

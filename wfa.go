@@ -101,9 +101,15 @@ var poolAligner = &sync.Pool{New: func() interface{} {
 // RecycleAligner recycles an Aligner object.
 func RecycleAligner(algn *Aligner) {
 	if algn != nil {
-		RecycleComponent(algn.M)
-		RecycleComponent(algn.I)
-		RecycleComponent(algn.D)
+		// there's no need to recyle them, just leave them with the aligner.
+
+		// RecycleComponent(algn.M)
+		// RecycleComponent(algn.I)
+		// RecycleComponent(algn.D)
+
+		// algn.M = nil
+		// algn.I = nil
+		// algn.D = nil
 
 		poolAligner.Put(algn)
 	}
@@ -115,6 +121,12 @@ func New(p *Penalties, opt *Options) *Aligner {
 	algn := poolAligner.Get().(*Aligner)
 	algn.p = p
 	algn.opt = opt
+
+	// there's no need to recyle them, just leave them with the aligner.
+	// algn.M = NewComponent()
+	// algn.I = NewComponent()
+	// algn.D = NewComponent()
+
 	return algn
 }
 
@@ -447,7 +459,7 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 
 // adaptive reduction
 func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
-	wf := algn.M.WaveFronts[s]
+	wf := algn.M.WaveFronts[s] // previously, we've checked. M.HasScore(s)
 	lo, hi := wf.Lo, wf.Hi
 	var offset uint32
 	var v, h int

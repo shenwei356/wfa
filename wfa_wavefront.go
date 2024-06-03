@@ -149,7 +149,7 @@ func (wf *WaveFront) GetRaw(k int) (uint32, bool) {
 	return offset, offset > 0
 }
 
-// Delete delete an offset of a k.
+// Delete deletes an offset of a k.
 func (wf *WaveFront) Delete(k int) {
 	if k < wf.Lo || k > wf.Hi { // check k range
 		return
