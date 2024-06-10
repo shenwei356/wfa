@@ -1,5 +1,8 @@
 # Changelog
 
+- v0.3.0
+    - faster speed and lower memory simply by changing the default value of `OFFSETS_BASE_SIZE` from 2048 to 128.
+    - setting `WAVEFRONTS_BASE_SIZE` and `OFFSETS_BASE_SIZE` as global variables, not constants.
 - v0.2.3
     - fix adaptive reduction.
 - v0.2.2

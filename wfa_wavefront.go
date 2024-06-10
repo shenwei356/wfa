@@ -28,7 +28,7 @@ import (
 )
 
 // OFFSETS_BASE_SIZE is the base size of the offset slice.
-const OFFSETS_BASE_SIZE = 2048
+var OFFSETS_BASE_SIZE = 128
 
 var _OFFSETS_GROW_SLICE = make([]uint32, OFFSETS_BASE_SIZE)
 

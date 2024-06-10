@@ -27,7 +27,7 @@ import (
 )
 
 // WAVEFRONTS_BASE_SIZE is the base size of the wavefront slice.
-const WAVEFRONTS_BASE_SIZE = 2048
+var WAVEFRONTS_BASE_SIZE = 2048
 
 var _WAVEFRONTS_GROW_SLICE = make([]*WaveFront, WAVEFRONTS_BASE_SIZE)
 
