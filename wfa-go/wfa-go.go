@@ -97,7 +97,11 @@ Options/Flags:
 	})
 
 	if !*noAdaptive {
-		algn.AdaptiveReduction(wfa.DefaultAdaptiveOption)
+		algn.AdaptiveReduction(&wfa.AdaptiveReductionOption{
+			MinWFLen:    10,
+			MaxDistDiff: 50,
+			CutoffStep:  1,
+		})
 	}
 
 	defer func() {

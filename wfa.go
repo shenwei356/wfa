@@ -221,9 +221,9 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 	var s uint32
 	var lo, hi int
 	reduce := algn.ad != nil
-	var maxDistDiff int
+	var minWFLen int
 	if reduce {
-		maxDistDiff = int(algn.ad.MaxDistDiff)
+		minWFLen = int(algn.ad.MinWFLen)
 	}
 	for {
 		// fmt.Printf("---------------------- s: %-3d ----------------------\n", s)
@@ -239,7 +239,7 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 			}
 
 			// fmt.Printf("reduce:\n")
-			if reduce && hi-lo+1 >= maxDistDiff {
+			if reduce && hi-lo+1 >= minWFLen {
 				algn.reduce(q, t, s)
 			}
 		}
@@ -471,9 +471,9 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 	ds := poolDist.Get().(*[]int)
 	*ds = (*ds)[:0]
 	minDist = math.MaxInt
-	for k := lo; k < hi; k++ {
+	for k := lo; k <= hi; k++ {
 		offset, _, ok = wf.Get(k)
-		if s > 0 && !ok {
+		if !ok {
 			*ds = append(*ds, -1)
 			continue
 		}
@@ -481,6 +481,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 		h = int(offset) // x
 		v = h - k       // y
 		if v < 0 || v >= lenQ || h >= lenT {
+			*ds = append(*ds, -1)
 			continue
 		}
 
@@ -496,6 +497,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 	_hi := hi
 	maxDistDiff := int(algn.ad.MaxDistDiff)
 	updateLo := true
+	found := false
 	I := algn.I
 	D := algn.D
 	for i, d := range *ds {
@@ -503,6 +505,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 			continue
 		}
 		if d-minDist > maxDistDiff {
+			found = true
 			if updateLo {
 				_lo = lo + i + 1
 			}
@@ -511,7 +514,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 			updateLo = false
 		}
 	}
-	if updateLo { // found some distance where d-minDist > maxDistDiff
+	if found { // found some distance where d-minDist > maxDistDiff
 		for i := len(*ds) - 1; i >= 0; i-- {
 			if (*ds)[i] >= 0 {
 				_hi = lo + i
@@ -530,6 +533,8 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 		I.Delete(s, k)
 		D.Delete(s, k)
 	}
+
+	wf.Lo, wf.Hi = _lo, _hi
 
 	poolDist.Put(ds)
 }

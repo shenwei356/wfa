@@ -305,42 +305,44 @@ Generate datasets with WFA (e634175) or WFA2-lib (v2.3.5):
     ./bin/generate_dataset -n 500 -l 50000 -e 0.10 -o l50000-e0.10.seq
     ./bin/generate_dataset -n 500 -l 50000 -e 0.20 -o l50000-e0.20.seq
 
-Commands:
+Commands (all tools use wfa-adaptive heuristic 10,50,1):
 
     # memusg: https://github.com/shenwei356/memusg
 
-    # WFA / WFA2-lib
-    memusg -t -s "./bin/align_benchmark -i l1000-e0.05.seq  -a gap-affine-wfa"
+    # WFA
+    memusg -t -s "./bin/align_benchmark -i l1000-e0.05.seq -a gap-affine-wfa-adaptive"
+
+    # WFA2-lib
+    memusg -t -s "./bin/align_benchmark -i l1000-e0.05.seq -a gap-affine-wfa --wfa-heuristic wfa-adaptive --wfa-heuristic-parameters 10,50,1"
 
     # WFA-go (this package, binary files are availabe in the release page)
     # global alignment && do not output results
     memusg -t -s "wfa-go -N -i l1000-e0.05.seq"
 
-
     csvtk csv2md -t benchmark.tsv -a c,c,c,l,r,r
 
 Results:
 
-|Seq-len|Seq-num|Error-rate|Package|Time    |Memory   |
-|:-----:|:-----:|:--------:|:------|-------:|--------:|
-|1000   |100000 |0.05      |WFA1   |6.122s  |3.17 MB  |
-|       |       |          |WFA2   |5.332s  |5.65 MB  |
-|       |       |          |WFA-go |51.742s |15.71 MB |
-|1000   |100000 |0.10      |WFA1   |14.881s |3.07 MB  |
-|       |       |          |WFA2   |13.683s |6.61 MB  |
-|       |       |          |WFA-go |192.000s|23.84 MB |
-|1000   |100000 |0.20      |WFA1   |45.290s |6.72 MB  |
-|       |       |          |WFA2   |41.453s |9.09 MB  |
-|       |       |          |WFA-go |527.000s|33.77 MB |
-|50000  |500    |0.05      |WFA1   |1m:06s  |745.68 MB|
-|       |       |          |WFA2   |1m:04s  |720.57 MB|
-|       |       |          |WFA-go |11m:29s |2.58 GB  |
-|50000  |500    |0.10      |WFA1   |4m:03s  |2.34 GB  |
-|       |       |          |WFA2   |3m:43s  |2.34 GB  |
-|       |       |          |WFA-go |/       |/        |
-|50000  |500    |0.20      |WFA1   |9m:51s  |6.81 GB  |
-|       |       |          |WFA2   |9m:39s  |6.86 GB  |
-|       |       |          |WFA-go |/       |/        |
+|Seq-len|Seq-num|Error-rate|Package|Time   |Memory   |
+|:-----:|:-----:|:--------:|:------|------:|--------:|
+|1000   |100000 |0.05      |WFA1   |4.523s |3.21 MB  |
+|       |       |          |WFA2   |3.597s |4.90 MB  |
+|       |       |          |WFA-go |19.646s|16.25 MB |
+|1000   |100000 |0.1       |WFA1   |8.031s |2.04 MB  |
+|       |       |          |WFA2   |6.973s |6.55 MB  |
+|       |       |          |WFA-go |48.381s|24.28 MB |
+|1000   |100000 |0.2       |WFA1   |15.538s|4.04 MB  |
+|       |       |          |WFA2   |13.450s|9.24 MB  |
+|       |       |          |WFA-go |2m:50s |34.70 MB |
+|50000  |500    |0.05      |WFA1   |2.180s |56.12 MB |
+|       |       |          |WFA2   |1.481s |107.76 MB|
+|       |       |          |WFA-go |15.586s|258.13 MB|
+|50000  |500    |0.1       |WFA1   |4.144s |55.3 MB  |
+|       |       |          |WFA2   |3.296s |190.32 MB|
+|       |       |          |WFA-go |38.491s|423.44 MB|
+|50000  |500    |0.2       |WFA1   |7.574s |81.15 MB |
+|       |       |          |WFA2   |6.842s |314.08 MB|
+|       |       |          |WFA-go |1m:25s |690.47 MB|
 
 Run in a laptop PC, with single-thread.
 

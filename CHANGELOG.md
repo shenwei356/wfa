@@ -1,5 +1,7 @@
 # Changelog
 
+- v0.2.3
+    - fix adaptive reduction.
 - v0.2.2
     - fix a concurrency bug when using multiple aligners.
 - v0.2.1

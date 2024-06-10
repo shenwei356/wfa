@@ -57,7 +57,7 @@ func NewComponent() *Component {
 func (cpt *Component) Reset() {
 	for i, wf := range cpt.WaveFronts {
 		if wf != nil {
-			RecycleWaveFront(wf)
+			poolWaveFront.Put(wf)
 			cpt.WaveFronts[i] = nil // reset it to nil
 		}
 	}
