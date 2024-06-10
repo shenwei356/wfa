@@ -31,7 +31,7 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.2.2"
+var version = "0.2.3"
 
 func main() {
 	app := filepath.Base(os.Args[0])
