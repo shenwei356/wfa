@@ -1,6 +1,6 @@
 # Changelog
 
-- v0.4.0
+- v0.3.1
     - use a more efficient data structure to store cigar operations.
     - slight speed improvement.
 - v0.3.0
