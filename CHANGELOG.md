@@ -1,5 +1,8 @@
 # Changelog
 
+- v0.4.0
+    - use more an efficient data structure to store cigar operations.
+    - alignment of some sequences are better.
 - v0.3.0
     - faster speed and lower memory simply by changing the default value of `OFFSETS_BASE_SIZE` from 2048 to 128.
     - setting `WAVEFRONTS_BASE_SIZE` and `OFFSETS_BASE_SIZE` as global variables, not constants.

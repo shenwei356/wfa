@@ -28,7 +28,9 @@ import (
 
 // AlignmentResult represent a AlignmentResult structure.
 type AlignmentResult struct {
-	Ops   []*CIGARRecord
+	// Ops   []*CIGARRecord
+	Ops []uint64 // 24-bit null + 8 bit Op + 32-bit N
+
 	Score uint32 // Alignment score
 
 	TBegin, TEnd int // 1-based location of the alignment in target seq, no including flanking clipping/insertion sequences
@@ -43,11 +45,23 @@ type AlignmentResult struct {
 	proccessed bool
 }
 
-// CIGARRecord records the operation and the number.
-type CIGARRecord struct {
-	N  uint32
-	Op byte
+// // CIGARRecord records the operation and the number.
+// type CIGARRecord struct {
+// 	N  uint32
+// 	Op byte
+// }
+
+// Op extracts operation type and count.
+func Op(op uint64) (byte, uint32) {
+	return byte(op >> 32), uint32(op & MaskLower32)
 }
+
+const OpM = uint64('M')
+const OpD = uint64('D')
+const OpI = uint64('I')
+const OpX = uint64('X')
+const OpH = uint64('H')
+const MaskLower32 = 4294967295
 
 // NewAlignmentResult returns a new CIGAR from the object pool.
 func NewAlignmentResult() *AlignmentResult {
@@ -58,9 +72,9 @@ func NewAlignmentResult() *AlignmentResult {
 
 // reset resets a CIGAR.
 func (cigar *AlignmentResult) reset() {
-	for _, r := range cigar.Ops {
-		poolCIGARRecord.Put(r)
-	}
+	// for _, r := range cigar.Ops {
+	// 	poolCIGARRecord.Put(r)
+	// }
 	cigar.Ops = cigar.Ops[:0]
 	cigar.Score = 0
 	cigar.proccessed = false
@@ -81,15 +95,16 @@ func RecycleAlignmentResult(cigar *AlignmentResult) {
 // object pool of a CIGAR.
 var poolCIGAR = &sync.Pool{New: func() interface{} {
 	cigar := AlignmentResult{
-		Ops: make([]*CIGARRecord, 0, 128),
+		// Ops: make([]*CIGARRecord, 0, 128),
+		Ops: make([]uint64, 0, 1024),
 	}
 	return &cigar
 }}
 
-// object pool of CIGARRecord.
-var poolCIGARRecord = &sync.Pool{New: func() interface{} {
-	return &CIGARRecord{}
-}}
+// // object pool of CIGARRecord.
+// var poolCIGARRecord = &sync.Pool{New: func() interface{} {
+// 	return &CIGARRecord{}
+// }}
 
 // Add adds a new record in backtrace.
 func (cigar *AlignmentResult) Add(op byte) {
@@ -98,17 +113,19 @@ func (cigar *AlignmentResult) Add(op byte) {
 
 // Add adds a new record in backtrace and set its number as n.
 func (cigar *AlignmentResult) AddN(op byte, n uint32) {
-	r := poolCIGARRecord.Get().(*CIGARRecord)
-	r.Op = op
-	r.N = n
-	cigar.Ops = append(cigar.Ops, r)
+	// r := poolCIGARRecord.Get().(*CIGARRecord)
+	// r.Op = op
+	// r.N = n
+	// cigar.Ops = append(cigar.Ops, r)
+	cigar.Ops = append(cigar.Ops, uint64(op)<<32|uint64(n))
 }
 
 // Update updates the last record.
 func (cigar *AlignmentResult) Update(n uint32) {
 	l := len(cigar.Ops)
 	if l > 0 {
-		cigar.Ops[l-1].N += n
+		// cigar.Ops[l-1].N += n
+		cigar.Ops[l-1] += uint64(n)
 	}
 }
 
@@ -126,14 +143,19 @@ func (cigar *AlignmentResult) process() {
 	}
 
 	// merge operations of the same type.
-	var opPre, op *CIGARRecord
+	// var opPre, op *CIGARRecord
+	var opPre, op uint64
+	var iPre int
 	var newOp bool
 	i, j = 0, 0
 	opPre = (*s)[0]
+	iPre = 0
 	for i = 1; i < len(*s); i++ {
 		op = (*s)[i]
-		if op.Op == opPre.Op {
-			opPre.N += op.N // update count
+		// if op.Op == opPre.Op {
+		if op>>32 == opPre>>32 {
+			// opPre.N += op.N // update count
+			(*s)[iPre] = opPre + op&MaskLower32 // update count
 
 			if !newOp {
 				j = i // mark insert position
@@ -148,6 +170,7 @@ func (cigar *AlignmentResult) process() {
 		}
 
 		opPre = op
+		iPre = i
 	}
 	if j > 0 {
 		*s = (*s)[:j]
@@ -156,14 +179,16 @@ func (cigar *AlignmentResult) process() {
 	// count matches, gaps
 	var begin, end int
 	for i, op = range *s {
-		if op.Op == 'M' {
+		// if op.Op == 'M' {
+		if op>>32 == OpM {
 			begin = i
 			break
 		}
 	}
 	for i = len(*s) - 1; i >= 0; i-- {
 		op = (*s)[i]
-		if op.Op == 'M' {
+		// if op.Op == 'M' {
+		if op>>32 == OpM {
 			end = i
 			break
 		}
@@ -175,12 +200,16 @@ func (cigar *AlignmentResult) process() {
 
 	for i = begin; i <= end; i++ {
 		op = (*s)[i]
-		alen += op.N
-		switch op.Op {
-		case 'M':
-			matches += op.N
-		case 'I', 'D':
-			gaps += op.N
+		// alen += op.N
+		alen += uint32(op & MaskLower32)
+		// switch op.Op {
+		switch op >> 32 {
+		// case 'M':
+		case OpM:
+			matches += uint32(op & MaskLower32)
+		// case 'I', 'D':
+		case OpI, OpD:
+			gaps += uint32(op & MaskLower32)
 			gapRegions++
 		}
 	}
@@ -199,8 +228,10 @@ func (cigar *AlignmentResult) CIGAR() string {
 	buf.Reset()
 
 	for _, op := range cigar.Ops {
-		buf.WriteString(strconv.Itoa(int(op.N)))
-		buf.WriteByte(op.Op)
+		// buf.WriteString(strconv.Itoa(int(op.N)))
+		buf.WriteString(strconv.Itoa(int(op & MaskLower32)))
+		// buf.WriteByte(op.Op)
+		buf.WriteByte(byte(op >> 32))
 	}
 
 	text := buf.String()
@@ -223,35 +254,46 @@ func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]
 	// lenT := len(*t)
 
 	v, h = 0, 0
-	var i uint32
-
+	// var i uint32
+	var i, n uint64
 	for _, op := range cigar.Ops {
-		switch op.Op {
-		case 'M':
-			for i = 0; i < op.N; i++ {
+		n = op & MaskLower32
+
+		// switch op.Op {
+		switch op >> 32 {
+		// case 'M':
+		case OpM:
+			// for i = 0; i < op.N; i++ {
+			for i = 0; i < n; i++ {
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, '|')
 				*T = append(*T, (*t)[h])
 				v++
 				h++
 			}
-		case 'X':
-			for i = 0; i < op.N; i++ {
+		// case 'X':
+		case OpX:
+			// for i = 0; i < op.N; i++ {
+			for i = 0; i < n; i++ {
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, ' ')
 				*T = append(*T, (*t)[h])
 				v++
 				h++
 			}
-		case 'I':
-			for i = 0; i < op.N; i++ {
+		// case 'I':
+		case OpI:
+			// for i = 0; i < op.N; i++ {
+			for i = 0; i < n; i++ {
 				*Q = append(*Q, '-')
 				*A = append(*A, ' ')
 				*T = append(*T, (*t)[h])
 				h++
 			}
-		case 'D', 'H':
-			for i = 0; i < op.N; i++ {
+		// case 'D', 'H':
+		case OpD, OpH:
+			// for i = 0; i < op.N; i++ {
+			for i = 0; i < n; i++ {
 				*Q = append(*Q, (*q)[v])
 				*A = append(*A, ' ')
 				*T = append(*T, '-')
