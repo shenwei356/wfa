@@ -61,7 +61,7 @@ func NewWaveFront() *WaveFront {
 
 var poolWaveFront = &sync.Pool{New: func() interface{} {
 	wf := WaveFront{
-		Offsets: make([]uint32, OFFSETS_BASE_SIZE), // preset 2048 values.
+		Offsets: make([]uint32, OFFSETS_BASE_SIZE),
 	}
 	return &wf
 }}
@@ -93,8 +93,14 @@ func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
 	wf.Offsets[i] = offset<<wfaTypeBits | wfaType
 
 	// update k range
-	wf.Lo = min(wf.Lo, k)
-	wf.Hi = max(wf.Hi, k)
+	// wf.Lo = min(wf.Lo, k)
+	// wf.Hi = max(wf.Hi, k)
+	if k < wf.Lo {
+		wf.Lo = k
+	}
+	if k > wf.Hi {
+		wf.Hi = k
+	}
 }
 
 // Set sets an offset which has already contain a backtrace type.
@@ -110,8 +116,14 @@ func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
 	wf.Offsets[i] = offsetWithType
 
 	// update k range
-	wf.Lo = min(wf.Lo, k)
-	wf.Hi = max(wf.Hi, k)
+	// wf.Lo = min(wf.Lo, k)
+	// wf.Hi = max(wf.Hi, k)
+	if k < wf.Lo {
+		wf.Lo = k
+	}
+	if k > wf.Hi {
+		wf.Hi = k
+	}
 }
 
 // Increase increases the offset by delta.
@@ -127,8 +139,14 @@ func (wf *WaveFront) Increase(k int, delta uint32) {
 	wf.Offsets[i] += delta << wfaTypeBits
 
 	// update k range
-	wf.Lo = min(wf.Lo, k)
-	wf.Hi = max(wf.Hi, k)
+	// wf.Lo = min(wf.Lo, k)
+	// wf.Hi = max(wf.Hi, k)
+	if k < wf.Lo {
+		wf.Lo = k
+	}
+	if k > wf.Hi {
+		wf.Hi = k
+	}
 }
 
 // Get returns offset, wfaType, existed.

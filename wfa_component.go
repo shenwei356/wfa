@@ -46,7 +46,7 @@ func NewComponent() *Component {
 	cpt := poolComponent.Get().(*Component)
 	cpt.IsM = false
 
-	cpt.Reset()
+	// cpt.Reset()
 
 	cpt.WaveFronts = cpt.WaveFronts[:WAVEFRONTS_BASE_SIZE]
 
