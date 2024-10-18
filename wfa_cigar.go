@@ -145,36 +145,25 @@ func (cigar *AlignmentResult) process() {
 	// merge operations of the same type.
 	// var opPre, op *CIGARRecord
 	var opPre, op uint64
-	var iPre int
-	var newOp bool
 	i, j = 0, 0
 	opPre = (*s)[0]
-	iPre = 0
+
 	for i = 1; i < len(*s); i++ {
 		op = (*s)[i]
-		// if op.Op == opPre.Op {
 		if op>>32 == opPre>>32 {
-			// opPre.N += op.N // update count
-			(*s)[iPre] = opPre + op&MaskLower32 // update count
-
-			if !newOp {
-				j = i // mark insert position
-				newOp = true
-			}
+			opPre += op & MaskLower32 // update count
+			(*s)[j] = opPre
 			continue
 		}
 
-		if newOp {
-			(*s)[j] = op
-			j++
+		j++
+		if i != j {
+			(*s)[j] = (*s)[i]
 		}
 
 		opPre = op
-		iPre = i
 	}
-	if j > 0 {
-		*s = (*s)[:j]
-	}
+	*s = (*s)[:j+1]
 
 	// count matches, gaps
 	var begin, end int

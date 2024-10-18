@@ -141,10 +141,10 @@ func (algn *Aligner) AdaptiveReduction(ad *AdaptiveReductionOption) error {
 
 // initComponents resets the internal data before each alignment.
 func (algn *Aligner) initComponents(q, t *[]byte) {
-	// // clear all wavefronts
-	// algn.M.Reset()
-	// algn.I.Reset()
-	// algn.D.Reset()
+	// clear all wavefronts
+	algn.M.Reset()
+	algn.I.Reset()
+	algn.D.Reset()
 
 	m, n := len(*t), len(*q)
 	M := algn.M
@@ -264,14 +264,7 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 	// v := h - uint32(lastK)
 	// fmt.Printf("min s:%d, k:%d, h:%d, v:%d\n", minS, lastK, h, v)
 
-	r := algn.backTrace(q, t, minS, lastK)
-
-	// clear all wavefronts
-	algn.M.Reset()
-	algn.I.Reset()
-	algn.D.Reset()
-
-	return r, nil
+	return algn.backTrace(q, t, minS, lastK), nil
 }
 
 func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, int) {
