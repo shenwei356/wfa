@@ -710,7 +710,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	lenQ := len(*q)
 	lenT := len(*t)
 
-	cigar := NewAlignmentResult()
+	cigar := NewAlignmentResult(algn.opt.GlobalAlignment)
 	cigar.Score = s
 
 	var ok bool

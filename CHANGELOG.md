@@ -1,5 +1,8 @@
 # Changelog
 
+- v0.4.0
+    - add an augument to `AlignmentResult.AlignmentText()` and `AlignmentResult.CIGAR`.
+    - wfa-go: add a new flag `-t` for only showing the aligned region.
 - v0.3.1
     - use a more efficient data structure to store cigar operations.
     - slight speed improvement.

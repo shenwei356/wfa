@@ -31,7 +31,7 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.3.1"
+var version = "0.4.0"
 
 func main() {
 	app := filepath.Base(os.Args[0])
@@ -72,6 +72,7 @@ Options/Flags:
 	noGlobal := flag.Bool("g", false, "do not use global alignment")
 	noAdaptive := flag.Bool("a", false, "do not use adaptive reduction")
 	noOutput := flag.Bool("N", false, "do not output alignment (for benchmark)")
+	trim := flag.Bool("t", false, "only show the aligned region")
 
 	pprofCPU := flag.Bool("p", false, "cpu pprof. go tool pprof -http=:8080 cpu.pprof")
 	pprofMem := flag.Bool("m", false, "mem pprof. go tool pprof -http=:8080 mem.pprof")
@@ -118,13 +119,13 @@ Options/Flags:
 		}
 
 		if !*noOutput {
-			Q, A, T := result.AlignmentText(&_q, &_t)
+			Q, A, T := result.AlignmentText(&_q, &_t, *trim)
 
 			// fmt.Fprintln(outfh, q, t)
 			fmt.Fprintf(outfh, "query   %s\n", *Q)
 			fmt.Fprintf(outfh, "        %s\n", *A)
 			fmt.Fprintf(outfh, "target  %s\n", *T)
-			fmt.Fprintf(outfh, "cigar   %s\n", result.CIGAR())
+			fmt.Fprintf(outfh, "cigar   %s\n", result.CIGAR(*trim))
 			fmt.Fprintln(outfh)
 			fmt.Fprintf(outfh, "align-score : %d\n", result.Score)
 			fmt.Fprintf(outfh, "match-region: q[%d, %d]/%d vs t[%d, %d]/%d\n",

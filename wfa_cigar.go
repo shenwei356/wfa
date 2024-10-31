@@ -43,6 +43,8 @@ type AlignmentResult struct {
 	GapRegions uint32
 
 	proccessed bool
+
+	globalAlignment bool
 }
 
 // // CIGARRecord records the operation and the number.
@@ -64,9 +66,10 @@ const OpH = uint64('H')
 const MaskLower32 = 4294967295
 
 // NewAlignmentResult returns a new CIGAR from the object pool.
-func NewAlignmentResult() *AlignmentResult {
+func NewAlignmentResult(globalAlignment bool) *AlignmentResult {
 	cigar := poolCIGAR.Get().(*AlignmentResult)
 	cigar.reset()
+	cigar.globalAlignment = globalAlignment
 	return cigar
 }
 
@@ -210,13 +213,36 @@ func (cigar *AlignmentResult) process() {
 	cigar.proccessed = true
 }
 
+// trimOps trim ops to keep only aligned region
+func trimOps(ops []uint64) []uint64 {
+	var start, end int
+	start, end = -1, -1
+	for i, op := range ops {
+		if op>>32 == OpM {
+			start = i
+			break
+		}
+	}
+	for i := len(ops) - 1; i >= 0; i-- {
+		if ops[i]>>32 == OpM {
+			end = i
+			break
+		}
+	}
+	return ops[start : end+1]
+}
+
 // CIGAR returns the CIGAR string.
-func (cigar *AlignmentResult) CIGAR() string {
+func (cigar *AlignmentResult) CIGAR(onlyAignedRegion bool) string {
 	cigar.process()
 	buf := poolBytesBuffer.Get().(*bytes.Buffer)
 	buf.Reset()
 
-	for _, op := range cigar.Ops {
+	ops := cigar.Ops
+	if onlyAignedRegion {
+		ops = trimOps(cigar.Ops)
+	}
+	for _, op := range ops {
 		// buf.WriteString(strconv.Itoa(int(op.N)))
 		buf.WriteString(strconv.Itoa(int(op & MaskLower32)))
 		// buf.WriteByte(op.Op)
@@ -230,8 +256,20 @@ func (cigar *AlignmentResult) CIGAR() string {
 
 // AlignmentText returns the formated alignment text for Query, Alignment, and Target.
 // Do not forget to recycle them with RecycleAlignmentText().
-func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]byte) {
+func (cigar *AlignmentResult) AlignmentText(q0, t0 *[]byte, onlyAignedRegion bool) (*[]byte, *[]byte, *[]byte) {
 	cigar.process()
+
+	var q, t []byte
+	ops := cigar.Ops
+	if !onlyAignedRegion {
+		q = *q0
+		t = *t0
+	} else {
+		q = (*q0)[cigar.QBegin-1 : cigar.QEnd]
+		t = (*t0)[cigar.TBegin-1 : cigar.TEnd]
+
+		ops = trimOps(cigar.Ops)
+	}
 
 	Q := poolBytes.Get().(*[]byte)
 	A := poolBytes.Get().(*[]byte)
@@ -245,7 +283,7 @@ func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]
 	v, h = 0, 0
 	// var i uint32
 	var i, n uint64
-	for _, op := range cigar.Ops {
+	for _, op := range ops {
 		n = op & MaskLower32
 
 		// switch op.Op {
@@ -254,9 +292,9 @@ func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]
 		case OpM:
 			// for i = 0; i < op.N; i++ {
 			for i = 0; i < n; i++ {
-				*Q = append(*Q, (*q)[v])
+				*Q = append(*Q, q[v])
 				*A = append(*A, '|')
-				*T = append(*T, (*t)[h])
+				*T = append(*T, t[h])
 				v++
 				h++
 			}
@@ -264,9 +302,9 @@ func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]
 		case OpX:
 			// for i = 0; i < op.N; i++ {
 			for i = 0; i < n; i++ {
-				*Q = append(*Q, (*q)[v])
+				*Q = append(*Q, q[v])
 				*A = append(*A, ' ')
-				*T = append(*T, (*t)[h])
+				*T = append(*T, t[h])
 				v++
 				h++
 			}
@@ -276,14 +314,14 @@ func (cigar *AlignmentResult) AlignmentText(q, t *[]byte) (*[]byte, *[]byte, *[]
 			for i = 0; i < n; i++ {
 				*Q = append(*Q, '-')
 				*A = append(*A, ' ')
-				*T = append(*T, (*t)[h])
+				*T = append(*T, t[h])
 				h++
 			}
 		// case 'D', 'H':
 		case OpD, OpH:
 			// for i = 0; i < op.N; i++ {
 			for i = 0; i < n; i++ {
-				*Q = append(*Q, (*q)[v])
+				*Q = append(*Q, q[v])
 				*A = append(*A, ' ')
 				*T = append(*T, '-')
 				v++
