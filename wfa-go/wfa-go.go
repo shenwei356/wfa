@@ -31,7 +31,7 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.4.0"
+var version = "0.4.1"
 
 func main() {
 	app := filepath.Base(os.Args[0])
@@ -50,7 +50,7 @@ Input file format:
   >CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGACCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCAGTGATTAAAC
   <CCTAGAGTTAGACACTCGACCGTGGTGAATCCGCGATCTACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCGAGTGATTAAAC
 
-Usage: 
+Usage:
   1. Align two sequences from the positional arguments.
 
         %s [options] <query seq> <target seq>

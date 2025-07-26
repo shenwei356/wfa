@@ -284,7 +284,7 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	// algn.Plot(q, t, os.Stdout, algn.M, true, -1)
 	// fmt.Printf("m: %d, n: %d\n", m, n)
 
-	for _s := s; _s >= 0; _s-- {
+	for _s := s; ; _s-- {
 		if !M.HasScore(_s) {
 			if _s == 0 {
 				break
@@ -655,11 +655,12 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		Msk = max(Isk, Dsk, v1+1)
 		if updatedI || updatedD || fromM {
 			if updatedI && updatedD && fromM {
-				if Msk == v1+1 { // mismatch is prefered if it might come from 3 ways
+				switch Msk {
+				case v1 + 1: // mismatch is prefered if it might come frsom 3 ways
 					wfaTypeM = wfaMismatch
-				} else if Msk == Isk {
+				case Isk:
 					wfaTypeM = wfaTypeI
-				} else {
+				default:
 					wfaTypeM = wfaTypeD
 				}
 			} else if updatedI {

@@ -61,7 +61,7 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 - A WaveFront is saved as a list of offsets `[]uint32`.
   We preset the list with a big length (2048) to avoid frequent `append` operations.
     - Diagonal `k` is the index.
-      To support negative `k` values, we use this layout:
+      To support negative `k` values, we use [ZigZag encoding](https://gist.github.com/mfuerstenau/ba870a29e16536fdbaba):
 
           index: 0,  1,  2,  3,  4,  5,  6
           k:     0, -1,  1, -2,  2, -3,  3

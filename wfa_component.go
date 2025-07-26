@@ -160,7 +160,8 @@ func (cpt *Component) GetAfterDiff(s uint32, diff uint32, k int) (uint32, uint32
 		return 0, 0, false
 	}
 	s -= diff
-	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	if cpt.WaveFronts[s] == nil {
 		return 0, 0, false
 	}
 	return cpt.WaveFronts[s].Get(k)
@@ -172,7 +173,8 @@ func (cpt *Component) GetRawAfterDiff(s uint32, diff uint32, k int) (uint32, boo
 		return 0, false
 	}
 	s -= diff
-	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	if cpt.WaveFronts[s] == nil {
 		return 0, false
 	}
 	return cpt.WaveFronts[s].GetRaw(k)
@@ -180,7 +182,8 @@ func (cpt *Component) GetRawAfterDiff(s uint32, diff uint32, k int) (uint32, boo
 
 // Delete delete an offset of a s and k.
 func (cpt *Component) Delete(s uint32, k int) {
-	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+	if cpt.WaveFronts[s] == nil {
 		return
 	}
 	cpt.WaveFronts[s].Delete(k)
