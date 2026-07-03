@@ -1,4 +1,4 @@
-// Copyright © 2024 Wei Shen <shenwei356@gmail.com>
+// Copyright © 2024-2026 Wei Shen <shenwei356@gmail.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -387,19 +387,32 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 	var v, h int
 	lenQ := len(*q)
 	lenT := len(*t)
+	qSlice := *q
+	tSlice := *t
 	var q8, t8 uint64
 	var n, N int
 
-	var ok bool
+	// var ok bool
+	var i int
 	for k := hi; k >= lo; k-- {
-		offset, _, ok = wf.Get(k)
-		// fmt.Printf("    k:%d, ok:%v, offset:%d\n", k, ok, offset>>wfaTypeBits)
-
-		if !ok {
+		// offset, _, ok = wf.Get(k)
+		// // fmt.Printf("    k:%d, ok:%v, offset:%d\n", k, ok, offset>>wfaTypeBits)
+		// if !ok {
+		// 	continue
+		// }
+		//
+		// no need to recheck the k range, since we are iterating from hi to lo.
+		i = k2i_inline(k) // will resuse it later
+		if i >= len(wf.Offsets) {
+			continue
+		}
+		offset = wf.Offsets[i]
+		if offset == 0 {
 			continue
 		}
 
-		h = int(offset)                       // x
+		// h = int(offset)                       // x
+		h = int(offset >> wfaTypeBits)        // x
 		v = h - k                             // y
 		if v <= 0 || v >= lenQ || h >= lenT { // bound check
 			continue
@@ -426,7 +439,8 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 			}
 
 			// fmt.Printf("        block wise, %d matches\n", N)
-			wf.Increase(k, uint32(N))
+			// wf.Increase(k, uint32(N))
+			wf.Offsets[i] += uint32(N) << wfaTypeBits // avoid many boundary checks in Increase()
 
 			if !(n == 8 && v < lenQ && h < lenT) {
 				continue
@@ -437,7 +451,7 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 		// compare each base
 
 		N = 0
-		for (*q)[v] == (*t)[h] {
+		for qSlice[v] == tSlice[h] {
 			v++
 			h++
 			N++
@@ -451,7 +465,8 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 		}
 
 		// fmt.Printf("      byte wise: k: %d, extend to h: %d, v: %d\n", k, h, v)
-		wf.Increase(k, uint32(N))
+		// wf.Increase(k, uint32(N))
+		wf.Offsets[i] += uint32(N) << wfaTypeBits // avoid many boundary checks in Increase()
 	}
 
 	return lo, hi
@@ -564,11 +579,32 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 	// fmt.Printf("s: %d, k: %d -> %d, lenQ: %d, lenT: %d\n", s, lo, hi, lenQ, lenT)
 
+	// Pre-compute score indices to avoid repeated calculations
+	sMismatch := s - p.Mismatch
+	sGapOpen := s - p.GapOpen - p.GapExt
+	sGapExt := s - p.GapExt
+
+	// Pre-fetch WaveFront pointers to reduce array access overhead
+	var wfM_Mismatch, wfM_GapOpen, wfI_GapExt, wfD_GapExt *WaveFront
+	if sMismatch < uint32(len(M.WaveFronts)) {
+		wfM_Mismatch = M.WaveFronts[sMismatch]
+	}
+	if sGapOpen < uint32(len(M.WaveFronts)) {
+		wfM_GapOpen = M.WaveFronts[sGapOpen]
+	}
+	if sGapExt < uint32(len(I.WaveFronts)) {
+		wfI_GapExt = I.WaveFronts[sGapExt]
+	}
+	if sGapExt < uint32(len(D.WaveFronts)) {
+		wfD_GapExt = D.WaveFronts[sGapExt]
+	}
+
 	var fromI, fromD, fromM bool
 	var v1, v2 uint32
 	var Isk, Dsk, Msk uint32
 	var updatedI, updatedD bool
 	var wfaTypeI, wfaTypeD, wfaTypeM uint32
+
 	for k := lo; k <= hi; k++ {
 		updatedI, updatedD = false, false
 		wfaTypeI, wfaTypeD, wfaTypeM = 0, 0, 0
@@ -576,18 +612,30 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		// --------------------------------------
 		// insertion: 🠦
-		v1, _, fromM = M.GetAfterDiff(s, p.GapOpen+p.GapExt, k-1)
-		v2, _, fromI = I.GetAfterDiff(s, p.GapExt, k-1)
-		if fromM && int(v1) > lenT {
-			fromM = false
+		fromM = false
+		if wfM_GapOpen != nil {
+			v1, _, fromM = wfM_GapOpen.Get(k - 1)
+			if fromM && int(v1) > lenT {
+				fromM = false
+				v1 = 0
+			}
+		} else {
 			v1 = 0
 		}
-		if fromI && int(v2) > lenT {
-			fromI = false
+
+		fromI = false
+		if wfI_GapExt != nil {
+			v2, _, fromI = wfI_GapExt.Get(k - 1)
+			if fromI && int(v2) > lenT {
+				fromI = false
+				v2 = 0
+			}
+		} else {
 			v2 = 0
 		}
-		Isk = max(v1, v2) + 1
+
 		if fromM || fromI {
+			Isk = max(v1, v2) + 1
 			if fromM && fromI {
 				if v1 >= v2 {
 					wfaTypeI = wfaInsertOpen
@@ -610,20 +658,30 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		// --------------------------------------
 		// deletion: 🠧
-
-		v1, _, fromM = M.GetAfterDiff(s, p.GapOpen+p.GapExt, k+1)
-		v2, _, fromD = D.GetAfterDiff(s, p.GapExt, k+1)
-		if fromM && int(v1)-k > lenQ {
-			fromM = false
+		fromM = false
+		if wfM_GapOpen != nil {
+			v1, _, fromM = wfM_GapOpen.Get(k + 1)
+			if fromM && int(v1)-k > lenQ {
+				fromM = false
+				v1 = 0
+			}
+		} else {
 			v1 = 0
 		}
-		if fromD && int(v2)-k > lenQ {
-			fromD = false
+
+		fromD = false
+		if wfD_GapExt != nil {
+			v2, _, fromD = wfD_GapExt.Get(k + 1)
+			if fromD && int(v2)-k > lenQ {
+				fromD = false
+				v2 = 0
+			}
+		} else {
 			v2 = 0
 		}
 
-		Dsk = max(v1, v2)
 		if fromM || fromD {
+			Dsk = max(v1, v2)
 			if fromM && fromD {
 				if v1 >= v2 {
 					wfaTypeD = wfaDeleteOpen
@@ -635,7 +693,6 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			} else {
 				wfaTypeD = wfaDeleteExt
 			}
-
 			updatedD = true
 			D.Set(s, k, Dsk, wfaTypeD)
 			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save D: s=%d, k=%d, offset:%d, type:%s\n",
@@ -646,14 +703,19 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		// --------------------------------------
 		// mismatch: ⬂
-
-		v1, _, fromM = M.GetAfterDiff(s, p.Mismatch, k)
-		if fromM && (int(v1) > lenT || int(v1)-k > lenQ) { // it's the last column/row
-			fromM = false
+		fromM = false
+		if wfM_Mismatch != nil {
+			v1, _, fromM = wfM_Mismatch.Get(k)
+			if fromM && (int(v1) > lenT || int(v1)-k > lenQ) {
+				fromM = false
+				v1 = 0
+			}
+		} else {
 			v1 = 0
 		}
-		Msk = max(Isk, Dsk, v1+1)
+
 		if updatedI || updatedD || fromM {
+			Msk = max(Isk, Dsk, v1+1)
 			if updatedI && updatedD && fromM {
 				switch Msk {
 				case v1 + 1: // mismatch is prefered if it might come frsom 3 ways

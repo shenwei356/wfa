@@ -321,7 +321,7 @@ Commands (all tools use wfa-adaptive heuristic 10,50,1):
 
     csvtk csv2md -t benchmark.tsv -a c,c,c,l,r,r
 
-Results:
+Results (v0.3.0):
 
 |Seq-len|Seq-num|Error-rate|Package|Time   |Memory   |
 |:-----:|:-----:|:--------:|:------|------:|--------:|

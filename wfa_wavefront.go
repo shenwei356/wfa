@@ -1,4 +1,4 @@
-// Copyright © 2024 Wei Shen <shenwei356@gmail.com>
+// Copyright © 2024-2026 Wei Shen <shenwei356@gmail.com>
 //
 // Permission is hereby granted, free of charge, to any person obtaining a copy
 // of this software and associated documentation files (the "Software"), to deal
@@ -83,9 +83,15 @@ func k2i(k int64) int64 {
 	return (k << 1) ^ (k >> 63)
 }
 
+// k2i_inline is an inline version for performance-critical paths
+func k2i_inline(k int) int {
+	k64 := int64(k)
+	return int((k64 << 1) ^ (k64 >> 63))
+}
+
 // Set sets an offset with a given backtrace type.
 func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
-	i := int(k2i(int64(k)))
+	i := k2i_inline(k)
 	if i >= len(wf.Offsets) { // grow the slice
 		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
 		for j := 0; j < n; j++ {
@@ -105,10 +111,10 @@ func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
 	}
 }
 
-// Set sets an offset which has already contain a backtrace type.
+// SetRaw sets an offset which has already contain a backtrace type.
 // Here, offsetWithType = offset<<wfaTypeBits | wfaType.
 func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
-	i := int(k2i(int64(k)))
+	i := k2i_inline(k)
 	if i >= len(wf.Offsets) { // grow the slice
 		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
 		for j := 0; j < n; j++ {
@@ -131,7 +137,7 @@ func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
 // Increase increases the offset by delta.
 // Here delta does not contain the backtrace type.
 func (wf *WaveFront) Increase(k int, delta uint32) {
-	i := int(k2i(int64(k)))
+	i := k2i_inline(k)
 	if i >= len(wf.Offsets) { // grow the slice
 		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
 		for j := 0; j < n; j++ {
@@ -156,7 +162,7 @@ func (wf *WaveFront) Get(k int) (uint32, uint32, bool) {
 	if k < wf.Lo || k > wf.Hi { // check k range
 		return 0, 0, false
 	}
-	offset := wf.Offsets[k2i(int64(k))]
+	offset := wf.Offsets[k2i_inline(k)]
 	return offset >> wfaTypeBits, offset & wfaTypeMask, offset > 0
 }
 
@@ -165,7 +171,7 @@ func (wf *WaveFront) GetRaw(k int) (uint32, bool) {
 	if k < wf.Lo || k > wf.Hi { // check k range
 		return 0, false
 	}
-	offset := wf.Offsets[k2i(int64(k))]
+	offset := wf.Offsets[k2i_inline(k)]
 	return offset, offset > 0
 }
 
@@ -174,7 +180,7 @@ func (wf *WaveFront) Delete(k int) {
 	if k < wf.Lo || k > wf.Hi { // check k range
 		return
 	}
-	wf.Offsets[k2i(int64(k))] = 0
+	wf.Offsets[k2i_inline(k)] = 0
 
 	// update k range
 	switch k {
@@ -183,6 +189,12 @@ func (wf *WaveFront) Delete(k int) {
 	case wf.Lo:
 		wf.Lo++
 	}
+	// same speed
+	//	if k == wf.Hi {
+	//		wf.Hi--
+	//	} else if k == wf.Lo {
+	//		wf.Lo++
+	//	}
 }
 
 // String lists all the offsets.
