@@ -321,28 +321,28 @@ Commands (all tools use wfa-adaptive heuristic 10,50,1):
 
     csvtk csv2md -t benchmark.tsv -a c,c,c,l,r,r
 
-Results (v0.3.0):
+Results (wfa-go v0.4.2):
 
 |Seq-len|Seq-num|Error-rate|Package|Time   |Memory   |
 |:-----:|:-----:|:--------:|:------|------:|--------:|
 |1000   |100000 |0.05      |WFA1   |4.523s |3.21 MB  |
 |       |       |          |WFA2   |3.597s |4.90 MB  |
-|       |       |          |WFA-go |15.424s|9.97 MB  |
+|       |       |          |WFA-go |11.826s|15.37 MB |
 |1000   |100000 |0.1       |WFA1   |8.031s |2.04 MB  |
 |       |       |          |WFA2   |6.973s |6.55 MB  |
-|       |       |          |WFA-go |41.790s|12.06 MB |
+|       |       |          |WFA-go |31.855s|15.42 MB |
 |1000   |100000 |0.2       |WFA1   |15.538s|4.04 MB  |
 |       |       |          |WFA2   |13.450s|9.24 MB  |
-|       |       |          |WFA-go |1m:51s |10.22 MB |
+|       |       |          |WFA-go |88s    |13.54 MB |
 |50000  |500    |0.05      |WFA1   |2.180s |56.12 MB |
 |       |       |          |WFA2   |1.481s |107.76 MB|
-|       |       |          |WFA-go |6.107s |86.61 MB |
+|       |       |          |WFA-go |5.177s |90.62 MB |
 |50000  |500    |0.1       |WFA1   |4.144s |55.3 MB  |
 |       |       |          |WFA2   |3.296s |190.32 MB|
-|       |       |          |WFA-go |17.908s|174.62 MB|
+|       |       |          |WFA-go |14.485s|166.38 MB|
 |50000  |500    |0.2       |WFA1   |7.574s |81.15 MB |
 |       |       |          |WFA2   |6.842s |314.08 MB|
-|       |       |          |WFA-go |48.122s|275.80 MB|
+|       |       |          |WFA-go |40.747s|262.37 MB|
 
 Run in a laptop PC, with single-thread.
 

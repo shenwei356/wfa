@@ -1,7 +1,7 @@
 # Changelog
 
 - v0.4.2
-    - slightly speedup (12%)
+    - slightly speedup (~12%)
 - v0.4.1
     - slightly speedup
 - v0.4.0
