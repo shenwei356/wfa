@@ -23,6 +23,7 @@ package wfa
 import (
 	"fmt"
 	"io"
+	"math"
 	"sync"
 )
 
@@ -31,6 +32,47 @@ var WAVEFRONTS_BASE_SIZE = 2048
 
 var _WAVEFRONTS_GROW_SLICE = make([]*WaveFront, WAVEFRONTS_BASE_SIZE)
 
+// Each Component owns its own chunked arena for WaveFronts so that all
+// allocations for a single component are physically contiguous, drastically
+// improving cache locality during alignment operations. Chunks are fixed
+// size, so the address of any element is stable for the component's lifetime
+// (and across Component recycling, since chunks are reused in place).
+const waveFrontChunkSize = 512
+
+type waveFrontArena struct {
+	chunks [][]WaveFront
+	cur    int
+	pos    int
+}
+
+func (a *waveFrontArena) alloc() *WaveFront {
+	if a.pos >= waveFrontChunkSize {
+		a.cur++
+		a.pos = 0
+	}
+	if a.cur >= len(a.chunks) {
+		a.chunks = append(a.chunks, make([]WaveFront, waveFrontChunkSize))
+	}
+	wf := &a.chunks[a.cur][a.pos]
+	a.pos++
+
+	// Initialize the WaveFront
+	wf.Lo = math.MaxInt
+	wf.Hi = math.MinInt
+	if wf.Offsets == nil {
+		wf.Offsets = make([]uint32, OFFSETS_BASE_SIZE)
+	} else {
+		wf.Offsets = wf.Offsets[:OFFSETS_BASE_SIZE]
+		clear(wf.Offsets)
+	}
+	return wf
+}
+
+func (a *waveFrontArena) reset() {
+	a.cur = 0
+	a.pos = 0
+}
+
 // Component is the wavefront component, it's a list of wavefronts for different scores.
 // To support fast access, we use a list to them,
 // the nil data means there's no such wavefront for a given score.
@@ -38,6 +80,7 @@ type Component struct {
 	IsM bool // if it is true, the visualization is slightly different
 
 	WaveFronts []*WaveFront // WaveFronts
+	arena      waveFrontArena
 }
 
 // NewComponent returns a new Component object.
@@ -55,12 +98,14 @@ func NewComponent() *Component {
 
 // Reset clears all existing wavefronts for new using.
 func (cpt *Component) Reset() {
+	// Only clear the used part of the slice for better performance
 	for i, wf := range cpt.WaveFronts {
 		if wf != nil {
-			poolWaveFront.Put(wf)
-			cpt.WaveFronts[i] = nil // reset it to nil
+			cpt.WaveFronts[i] = nil
 		}
 	}
+	// Reset the arena to reuse the memory chunks
+	cpt.arena.reset()
 }
 
 var poolComponent = &sync.Pool{New: func() interface{} {
@@ -107,7 +152,7 @@ func (cpt *Component) Set(s uint32, k int, offset uint32, wfaType uint32) {
 	}
 	wf := cpt.WaveFronts[s]
 	if wf == nil {
-		wf = NewWaveFront()
+		wf = cpt.arena.alloc()
 		cpt.WaveFronts[s] = wf
 	}
 
@@ -122,7 +167,7 @@ func (cpt *Component) SetRaw(s uint32, k int, offset uint32) {
 	}
 	wf := cpt.WaveFronts[s]
 	if wf == nil {
-		wf = NewWaveFront()
+		wf = cpt.arena.alloc()
 		cpt.WaveFronts[s] = wf
 	}
 

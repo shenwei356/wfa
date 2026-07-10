@@ -332,10 +332,9 @@ func (cigar *AlignmentResult) AlignmentText(q0, t0 *[]byte, onlyAignedRegion boo
 	return Q, A, T
 }
 
-// object pool of aligners.
+// object pool of bytes.Buffer for CIGAR string generation.
 var poolBytesBuffer = &sync.Pool{New: func() interface{} {
-	buf := make([]byte, 1024)
-	return bytes.NewBuffer(buf)
+	return bytes.NewBuffer(make([]byte, 0, 1024))
 }}
 
 var poolBytes = &sync.Pool{New: func() interface{} {

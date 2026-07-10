@@ -1,5 +1,7 @@
 # Changelog
 
+- v0.4.3
+    - slightly speedup (0-3% for 1kb seqs, 15-20% for 50kb seqs), and reduced memory usage for long seqs.
 - v0.4.2
     - slightly speedup (~12%)
 - v0.4.1
