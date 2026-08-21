@@ -630,34 +630,44 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 	var updatedI, updatedD bool
 	var wfaTypeI, wfaTypeD, wfaTypeM uint32
 	var wfI, wfD, wfM *WaveFront
+	var raw uint32
+	var iMinus, i, iPlus int
+	var firstM, lastM int
 
+	// k increases monotonically, and I/D at score s are created only here.
+	// Track their ranges while writing; M may already contain semi-global seeds.
 	for k := lo; k <= hi; k++ {
 		updatedI, updatedD = false, false
 		wfaTypeI, wfaTypeD, wfaTypeM = 0, 0, 0
+		iMinus = k2i_inline(k - 1)
+		i = k2i_inline(k)
+		iPlus = k2i_inline(k + 1)
 		// fmt.Printf(" k: %d\n", k)
 
 		// --------------------------------------
 		// insertion: 🠦
 		fromM = false
-		if wfM_GapOpen != nil {
-			v1, _, fromM = wfM_GapOpen.Get(k - 1)
+		v1 = 0
+		if wfM_GapOpen != nil && k-1 >= wfM_GapOpen.Lo && k-1 <= wfM_GapOpen.Hi {
+			raw = wfM_GapOpen.Offsets[iMinus]
+			fromM = raw != 0
+			v1 = raw >> wfaTypeBits
 			if fromM && int(v1) > lenT {
 				fromM = false
 				v1 = 0
 			}
-		} else {
-			v1 = 0
 		}
 
 		fromI = false
-		if wfI_GapExt != nil {
-			v2, _, fromI = wfI_GapExt.Get(k - 1)
+		v2 = 0
+		if wfI_GapExt != nil && k-1 >= wfI_GapExt.Lo && k-1 <= wfI_GapExt.Hi {
+			raw = wfI_GapExt.Offsets[iMinus]
+			fromI = raw != 0
+			v2 = raw >> wfaTypeBits
 			if fromI && int(v2) > lenT {
 				fromI = false
 				v2 = 0
 			}
-		} else {
-			v2 = 0
 		}
 
 		if fromM || fromI {
@@ -673,8 +683,10 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			updatedI = true
 			if wfI == nil {
 				wfI = I.waveFrontForRange(s, lo, hi)
+				wfI.Lo = k
 			}
-			wfI.setInRange(k, Isk, wfaTypeI)
+			wfI.Offsets[i] = Isk<<wfaTypeBits | wfaTypeI
+			wfI.Hi = k
 			// fmt.Printf("  %d fromM:%v(%d), fromI:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Isk, fromM, v1, fromI, v2, s, k, Isk, wfaType2str(wfaTypeI))
 		} else {
@@ -684,25 +696,27 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		// --------------------------------------
 		// deletion: 🠧
 		fromM = false
-		if wfM_GapOpen != nil {
-			v1, _, fromM = wfM_GapOpen.Get(k + 1)
+		v1 = 0
+		if wfM_GapOpen != nil && k+1 >= wfM_GapOpen.Lo && k+1 <= wfM_GapOpen.Hi {
+			raw = wfM_GapOpen.Offsets[iPlus]
+			fromM = raw != 0
+			v1 = raw >> wfaTypeBits
 			if fromM && int(v1)-k > lenQ {
 				fromM = false
 				v1 = 0
 			}
-		} else {
-			v1 = 0
 		}
 
 		fromD = false
-		if wfD_GapExt != nil {
-			v2, _, fromD = wfD_GapExt.Get(k + 1)
+		v2 = 0
+		if wfD_GapExt != nil && k+1 >= wfD_GapExt.Lo && k+1 <= wfD_GapExt.Hi {
+			raw = wfD_GapExt.Offsets[iPlus]
+			fromD = raw != 0
+			v2 = raw >> wfaTypeBits
 			if fromD && int(v2)-k > lenQ {
 				fromD = false
 				v2 = 0
 			}
-		} else {
-			v2 = 0
 		}
 
 		if fromM || fromD {
@@ -716,8 +730,10 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			updatedD = true
 			if wfD == nil {
 				wfD = D.waveFrontForRange(s, lo, hi)
+				wfD.Lo = k
 			}
-			wfD.setInRange(k, Dsk, wfaTypeD)
+			wfD.Offsets[i] = Dsk<<wfaTypeBits | wfaTypeD
+			wfD.Hi = k
 			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save D: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Dsk, fromM, v1, fromD, v2, s, k, Dsk, wfaType2str(wfaTypeD))
 		} else {
@@ -727,14 +743,15 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		// --------------------------------------
 		// mismatch: ⬂
 		fromM = false
-		if wfM_Mismatch != nil {
-			v1, _, fromM = wfM_Mismatch.Get(k)
+		v1 = 0
+		if wfM_Mismatch != nil && k >= wfM_Mismatch.Lo && k <= wfM_Mismatch.Hi {
+			raw = wfM_Mismatch.Offsets[i]
+			fromM = raw != 0
+			v1 = raw >> wfaTypeBits
 			if fromM && (int(v1) > lenT || int(v1)-k > lenQ) {
 				fromM = false
 				v1 = 0
 			}
-		} else {
-			v1 = 0
 		}
 
 		if updatedI || updatedD || fromM {
@@ -760,11 +777,17 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 			if wfM == nil {
 				wfM = M.waveFrontForRange(s, lo, hi)
+				firstM = k
 			}
-			wfM.setInRange(k, Msk, wfaTypeM)
+			wfM.Offsets[i] = Msk<<wfaTypeBits | wfaTypeM
+			lastM = k
 			// fmt.Printf("  %d fromI:%v(%d), fromD:%v(%d), fromM:%v(%d), save M: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Msk, updatedI, Isk, updatedD, Dsk, fromM, v1+1, s, k, Msk, wfaType2str(wfaTypeM))
 		}
+	}
+	if wfM != nil {
+		wfM.Lo = min(wfM.Lo, firstM)
+		wfM.Hi = max(wfM.Hi, lastM)
 	}
 }
 

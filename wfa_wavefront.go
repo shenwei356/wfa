@@ -111,17 +111,6 @@ func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
 	}
 }
 
-// setInRange sets a value after the caller has ensured the offset capacity.
-func (wf *WaveFront) setInRange(k int, offset uint32, wfaType uint32) {
-	wf.Offsets[k2i_inline(k)] = offset<<wfaTypeBits | wfaType
-	if k < wf.Lo {
-		wf.Lo = k
-	}
-	if k > wf.Hi {
-		wf.Hi = k
-	}
-}
-
 // SetRaw sets an offset which has already contain a backtrace type.
 // Here, offsetWithType = offset<<wfaTypeBits | wfaType.
 func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
