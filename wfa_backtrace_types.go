@@ -31,7 +31,7 @@ const (
 	wfaDeleteOpen
 	wfaDeleteExt
 	wfaMismatch
-	wfaMatch // only for first row/column
+	wfaMatch // alignment origin or the first row/column
 )
 
 var wfaOps []byte = []byte{'.', 'I', 'I', 'D', 'D', 'X', 'M', 'H'} // for backtrace

@@ -60,7 +60,8 @@ var DefaultAdaptiveOption = &AdaptiveReductionOption{
 }
 
 // Options represents a list of options.
-// Currently it only support global or semi-global alignment.
+// Global alignment consumes both sequences end to end. Semi-global alignment
+// allows free leading and trailing ends.
 type Options struct {
 	GlobalAlignment bool
 }
@@ -120,6 +121,7 @@ func RecycleAligner(algn *Aligner) {
 func New(p *Penalties, opt *Options) *Aligner {
 	algn := poolAligner.Get().(*Aligner)
 	algn.p = p
+	algn.ad = nil
 	algn.opt = opt
 
 	// there's no need to recyle them, just leave them with the aligner.
@@ -149,6 +151,12 @@ func (algn *Aligner) initComponents(q, t *[]byte) {
 	m, n := len(*t), len(*q)
 	M := algn.M
 
+	if algn.opt.GlobalAlignment {
+		// Standard WFA origin: no characters have been consumed at score zero.
+		M.Set(0, 0, 0, wfaMatch)
+		return
+	}
+
 	var wfaType, score uint32
 
 	// have to check the first bases
@@ -159,27 +167,25 @@ func (algn *Aligner) initComponents(q, t *[]byte) {
 	}
 	M.Set(score, 0, 1, wfaType)
 
-	// for semi-global alignment
-	if !algn.opt.GlobalAlignment {
-		for k := 1; k < m; k++ { // first row
-			if (*q)[0] == (*t)[k] {
-				wfaType, score = wfaMatch, 0
-			} else {
-				wfaType, score = wfaMismatch, algn.p.Mismatch
-			}
-
-			M.Set(score, k, uint32(k+1), wfaType)
+	// Semi-global alignments may start anywhere in the first row or column.
+	for k := 1; k < m; k++ { // first row
+		if (*q)[0] == (*t)[k] {
+			wfaType, score = wfaMatch, 0
+		} else {
+			wfaType, score = wfaMismatch, algn.p.Mismatch
 		}
 
-		for k := 1; k < n; k++ { // first column
-			if (*q)[k] == (*t)[0] {
-				wfaType, score = wfaMatch, 0
-			} else {
-				wfaType, score = wfaMismatch, algn.p.Mismatch
-			}
+		M.Set(score, k, uint32(k+1), wfaType)
+	}
 
-			M.Set(score, -k, 1, wfaType)
+	for k := 1; k < n; k++ { // first column
+		if (*q)[k] == (*t)[0] {
+			wfaType, score = wfaMatch, 0
+		} else {
+			wfaType, score = wfaMismatch, algn.p.Mismatch
 		}
+
+		M.Set(score, -k, 1, wfaType)
 	}
 }
 
@@ -374,10 +380,10 @@ func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, in
 	return minS, lastK
 }
 
-var be = binary.BigEndian
+var le = binary.LittleEndian // slightly faster than binary.BigEndian
 
 // extend refers to the WF_EXTEND method.
-// The return bool value indicates whether the end of one sequence is reached.
+// It returns the diagonal range visited by the wavefront.
 func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 	wf := algn.M.WaveFronts[s]
 	lo, hi := wf.Lo, wf.Hi
@@ -412,21 +418,21 @@ func (algn *Aligner) extend(q, t *[]byte, s uint32) (int, int) {
 		}
 
 		// h = int(offset)                       // x
-		h = int(offset >> wfaTypeBits)        // x
-		v = h - k                             // y
-		if v <= 0 || v >= lenQ || h >= lenT { // bound check
+		h = int(offset >> wfaTypeBits)       // x
+		v = h - k                            // y
+		if v < 0 || v >= lenQ || h >= lenT { // bound check
 			continue
 		}
 
-		// offset is 1-based, here it's checking the base in the next position.
+		// h and v identify the next pair of bases to compare.
 
-		// compare every 8 bases, convert 8 bases to a uint64, xor them and count leading zeroes.
+		// Compare eight bases at a time and count equal prefix bytes.
 		if v+8 <= lenQ && h+8 <= lenT {
 			N = 0
 			// fmt.Printf("      block wise, start from: h: %d, v: %d\n", h, v)
 			for {
-				q8, t8 = be.Uint64((*q)[v:v+8]), be.Uint64((*t)[h:h+8])
-				n = bits.LeadingZeros64(q8^t8) >> 3 // divide 8
+				q8, t8 = le.Uint64((*q)[v:v+8]), le.Uint64((*t)[h:h+8])
+				n = bits.TrailingZeros64(q8^t8) >> 3 // divide 8
 				v += n
 				h += n
 				N += n
@@ -569,16 +575,6 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 	lenQ := len(*q)
 	lenT := len(*t)
 
-	loMismatch, hiMismatch := M.KRange(s, p.Mismatch)       // M[s-x]
-	loGapOpen, hiGapOpen := M.KRange(s, p.GapOpen+p.GapExt) // M[s-o-e]
-	loInsert, hiInsert := I.KRange(s, p.GapExt)             // I[s-e]
-	loDelete, hiDelete := D.KRange(s, p.GapExt)             // D[s-e]
-
-	hi := min(int(lenT-1), max(hiMismatch, hiGapOpen, hiInsert, hiDelete)+1)
-	lo := max(-int(lenQ-1), min(loMismatch, loGapOpen, loInsert, loDelete)-1)
-
-	// fmt.Printf("s: %d, k: %d -> %d, lenQ: %d, lenT: %d\n", s, lo, hi, lenQ, lenT)
-
 	// Pre-compute score indices to avoid repeated calculations
 	sMismatch := s - p.Mismatch
 	sGapOpen := s - p.GapOpen - p.GapExt
@@ -598,12 +594,42 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 	if sGapExt < uint32(len(D.WaveFronts)) {
 		wfD_GapExt = D.WaveFronts[sGapExt]
 	}
+	if wfM_Mismatch == nil && wfM_GapOpen == nil && wfI_GapExt == nil && wfD_GapExt == nil {
+		return
+	}
+
+	lo, hi := math.MaxInt, math.MinInt
+	if wfM_Mismatch != nil {
+		lo, hi = wfM_Mismatch.Lo, wfM_Mismatch.Hi
+	}
+	if wfM_GapOpen != nil {
+		lo = min(lo, wfM_GapOpen.Lo-1)
+		hi = max(hi, wfM_GapOpen.Hi+1)
+	}
+	if wfI_GapExt != nil {
+		lo = min(lo, wfI_GapExt.Lo+1)
+		hi = max(hi, wfI_GapExt.Hi+1)
+	}
+	if wfD_GapExt != nil {
+		lo = min(lo, wfD_GapExt.Lo-1)
+		hi = max(hi, wfD_GapExt.Hi-1)
+	}
+	if algn.opt.GlobalAlignment {
+		hi = min(lenT, hi)
+		lo = max(-lenQ, lo)
+	} else {
+		hi = min(lenT-1, hi)
+		lo = max(-(lenQ - 1), lo)
+	}
+
+	// fmt.Printf("s: %d, k: %d -> %d, lenQ: %d, lenT: %d\n", s, lo, hi, lenQ, lenT)
 
 	var fromI, fromD, fromM bool
 	var v1, v2 uint32
 	var Isk, Dsk, Msk uint32
 	var updatedI, updatedD bool
 	var wfaTypeI, wfaTypeD, wfaTypeM uint32
+	var wfI, wfD, wfM *WaveFront
 
 	for k := lo; k <= hi; k++ {
 		updatedI, updatedD = false, false
@@ -636,20 +662,19 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		if fromM || fromI {
 			Isk = max(v1, v2) + 1
-			if fromM && fromI {
-				if v1 >= v2 {
-					wfaTypeI = wfaInsertOpen
-				} else {
-					wfaTypeI = wfaInsertExt
-				}
-			} else if fromM {
-				wfaTypeI = wfaInsertOpen
-			} else {
+			// WFA2 prefers extending an existing gap when opening and extending
+			// reach the same offset. The previous implementation preferred open.
+			if fromI && (!fromM || v2 >= v1) {
 				wfaTypeI = wfaInsertExt
+			} else {
+				wfaTypeI = wfaInsertOpen
 			}
 
 			updatedI = true
-			I.Set(s, k, Isk, wfaTypeI)
+			if wfI == nil {
+				wfI = I.waveFrontForRange(s, lo, hi)
+			}
+			wfI.setInRange(k, Isk, wfaTypeI)
 			// fmt.Printf("  %d fromM:%v(%d), fromI:%v(%d), save I: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Isk, fromM, v1, fromI, v2, s, k, Isk, wfaType2str(wfaTypeI))
 		} else {
@@ -682,19 +707,17 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		if fromM || fromD {
 			Dsk = max(v1, v2)
-			if fromM && fromD {
-				if v1 >= v2 {
-					wfaTypeD = wfaDeleteOpen
-				} else {
-					wfaTypeD = wfaDeleteExt
-				}
-			} else if fromM {
-				wfaTypeD = wfaDeleteOpen
-			} else {
+			// Use the same extension-over-open tie-break as the insertion state.
+			if fromD && (!fromM || v2 >= v1) {
 				wfaTypeD = wfaDeleteExt
+			} else {
+				wfaTypeD = wfaDeleteOpen
 			}
 			updatedD = true
-			D.Set(s, k, Dsk, wfaTypeD)
+			if wfD == nil {
+				wfD = D.waveFrontForRange(s, lo, hi)
+			}
+			wfD.setInRange(k, Dsk, wfaTypeD)
 			// fmt.Printf("  %d fromM:%v(%d), fromD:%v(%d), save D: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Dsk, fromM, v1, fromD, v2, s, k, Dsk, wfaType2str(wfaTypeD))
 		} else {
@@ -715,47 +738,30 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 		}
 
 		if updatedI || updatedD || fromM {
-			Msk = max(Isk, Dsk, v1+1)
-			if updatedI && updatedD && fromM {
-				switch Msk {
-				case v1 + 1: // mismatch is prefered if it might come frsom 3 ways
-					wfaTypeM = wfaMismatch
-				case Isk:
-					wfaTypeM = wfaTypeI
-				default:
-					wfaTypeM = wfaTypeD
-				}
-			} else if updatedI {
-				if updatedD { // updatedI && updatedD && !fromM
-					if Msk == Isk {
-						wfaTypeM = wfaTypeI
-					} else {
-						wfaTypeM = wfaTypeD
-					}
-				} else if fromM { // updatedI && !updatedD && fromM
-					if Msk == v1+1 { // mismatch is prefered
-						wfaTypeM = wfaMismatch
-					} else {
-						wfaTypeM = wfaTypeI
-					}
-				} else { // updatedI && !updatedD && !fromM
-					wfaTypeM = wfaTypeI
-				}
-			} else if updatedD {
-				if fromM { // !updatedI && updatedD && fromM
-					if Msk == v1+1 { // mismatch is prefered
-						wfaTypeM = wfaMismatch
-					} else {
-						wfaTypeM = wfaTypeD
-					}
-				} else { // !updatedI && updatedD && !fromM
-					wfaTypeM = wfaTypeD
-				}
-			} else { // !updatedI && !updatedD && fromM
+			Msk = 0
+			if updatedI {
+				Msk = Isk
+			}
+			if updatedD && Dsk > Msk {
+				Msk = Dsk
+			}
+			if fromM && v1+1 > Msk {
+				Msk = v1 + 1
+			}
+			// Match extension is handled separately. The previous implementation
+			// resolved the remaining ties as X > I > D; WFA2 uses X > D > I.
+			if fromM && Msk == v1+1 {
 				wfaTypeM = wfaMismatch
+			} else if updatedD && Msk == Dsk {
+				wfaTypeM = wfaTypeD
+			} else {
+				wfaTypeM = wfaTypeI
 			}
 
-			M.Set(s, k, Msk, wfaTypeM)
+			if wfM == nil {
+				wfM = M.waveFrontForRange(s, lo, hi)
+			}
+			wfM.setInRange(k, Msk, wfaTypeM)
 			// fmt.Printf("  %d fromI:%v(%d), fromD:%v(%d), fromM:%v(%d), save M: s=%d, k=%d, offset:%d, type:%s\n",
 			// 	Msk, updatedI, Isk, updatedD, Dsk, fromM, v1+1, s, k, Msk, wfaType2str(wfaTypeM))
 		}
@@ -784,7 +790,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	var qBegin, tBegin int
 
 	var v1, v2, Isk, Dsk, offset0 uint32
-	var fromMI, fromMD, fromItself bool
+	var fromMI, fromMD, sourceFound bool
 	var fromI, fromD, fromM bool
 	var sMismatch, sGapOpen, sGapExt uint32
 	var previousFromM bool
@@ -825,16 +831,15 @@ LOOP:
 		sGapExt = s - p.GapExt
 
 		// offset of the source
-		fromMI, fromMD = false, false
+		fromMI, fromMD, sourceFound = false, false, false
 		switch wfaType {
 		case wfaInsertExt:
 			v1, _, fromM = M.Get(sGapOpen, k-1)
 			v2, _, fromI = I.Get(sGapExt, k-1)
 			if fromM || fromI {
 				fromMI = true
+				sourceFound = true
 				offset0 = max(v1, v2) + 1
-			} else {
-				offset0 = 0
 			}
 
 			M0 = I // for get the wfaType of the next one
@@ -843,9 +848,8 @@ LOOP:
 			v2, _, fromD = D.Get(sGapExt, k+1)
 			if fromM || fromD {
 				fromMD = true
+				sourceFound = true
 				offset0 = max(v1, v2)
-			} else {
-				offset0 = 0
 			}
 
 			M0 = D
@@ -870,19 +874,22 @@ LOOP:
 
 			v1, _, fromM = M.Get(sMismatch, k)
 			if fromMI || fromMD || fromM {
-				offset0 = max(Isk, Dsk, v1+1)
-				fromItself = false
-			} else {
-				fromItself = true
+				sourceFound = true
+				offset0 = 0
+				if fromMI {
+					offset0 = Isk
+				}
+				if fromMD && Dsk > offset0 {
+					offset0 = Dsk
+				}
+				if fromM && v1+1 > offset0 {
+					offset0 = v1 + 1
+				}
 			}
 
 			M0 = M
 		}
-		if fromItself {
-			// fmt.Printf("  break as there's no valid source offset\n")
-			break
-		}
-		if offset0 == 0 {
+		if !sourceFound {
 			// fmt.Printf("  break as there's no valid source offset\n")
 			break
 		}
@@ -990,6 +997,31 @@ LOOP:
 	// the last one
 
 	// fmt.Printf("------\nexit loop. h:%d, v:%d\n", h, v)
+	if !semiGlobal {
+		// WFA2 finishes an end-to-end traceback with the remaining score-zero
+		// matches followed by any leading insertion or deletion.
+		if h > 0 && v > 0 {
+			nMatches = min(h, v)
+			if firstMatch {
+				firstMatch = false
+				cigar.TEnd, cigar.QEnd = h, v
+			}
+			cigar.AddN(wfaOps[wfaMatch], uint32(nMatches))
+			tBegin, qBegin = h-nMatches+1, v-nMatches+1
+			h -= nMatches
+			v -= nMatches
+		}
+		if v > 0 {
+			cigar.AddN(wfaOps[wfaDeleteOpen], uint32(v))
+		}
+		if h > 0 {
+			cigar.AddN(wfaOps[wfaInsertOpen], uint32(h))
+		}
+		cigar.TBegin, cigar.QBegin = tBegin, qBegin
+		cigar.process()
+		return cigar
+	}
+
 	if h > 0 && v > 0 {
 		nMatches = min(h, v) - 1
 		// fmt.Printf("nmatches: %d\n", nMatches)

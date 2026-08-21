@@ -1,5 +1,9 @@
 # Changelog
 
+- v0.5.0
+    - fix global alignment to use standard end-to-end semantics and WFA2-compatible tie-breaking.
+    - speed up wavefront computation and reduce steady-state memory allocations.
+    - reset adaptive-reduction settings and alignment coordinates when reusing pooled objects.
 - v0.4.3
     - slightly speedup (0-3% for 1kb seqs, 15-20% for 50kb seqs), and reduced memory usage for long seqs.
 - v0.4.2

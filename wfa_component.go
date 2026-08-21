@@ -159,6 +159,33 @@ func (cpt *Component) Set(s uint32, k int, offset uint32, wfaType uint32) {
 	wf.Set(k, offset, wfaType)
 }
 
+// waveFrontForRange returns the wavefront for s and ensures that every k in
+// [lo, hi] can be written without checking capacity in the inner loop.
+func (cpt *Component) waveFrontForRange(s uint32, lo, hi int) *WaveFront {
+	for s >= uint32(len(cpt.WaveFronts)) {
+		cpt.WaveFronts = append(cpt.WaveFronts, _WAVEFRONTS_GROW_SLICE...)
+	}
+	wf := cpt.WaveFronts[s]
+	if wf == nil {
+		wf = cpt.arena.alloc()
+		cpt.WaveFronts[s] = wf
+	}
+	maxIndex := max(k2i_inline(lo), k2i_inline(hi))
+	if maxIndex >= len(wf.Offsets) {
+		newLen := (maxIndex/OFFSETS_BASE_SIZE + 1) * OFFSETS_BASE_SIZE
+		if newLen <= cap(wf.Offsets) {
+			oldLen := len(wf.Offsets)
+			wf.Offsets = wf.Offsets[:newLen]
+			clear(wf.Offsets[oldLen:])
+		} else {
+			offsets := make([]uint32, newLen)
+			copy(offsets, wf.Offsets)
+			wf.Offsets = offsets
+		}
+	}
+	return wf
+}
+
 // Set sets an offset which has already contain a backtrace type for a score.
 // Here, offsetWithType = offset<<wfaTypeBits | wfaType.
 func (cpt *Component) SetRaw(s uint32, k int, offset uint32) {

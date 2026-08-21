@@ -8,7 +8,7 @@ not [BiWFA](https://doi.org/10.1093/bioinformatics/btad074) (maybe in the future
 Implemented features:
 
 - Distance metrics: gap-affine.
-- Alignment types: global, semi-global.
+- Alignment types: global (end-to-end), semi-global (free ends).
 - Heuristics: wf-adaptive. 
 
 Executable binaries for common operating systems are available to [download](https://github.com/shenwei356/wfa/releases),

@@ -81,6 +81,8 @@ func (cigar *AlignmentResult) reset() {
 	cigar.Ops = cigar.Ops[:0]
 	cigar.Score = 0
 	cigar.proccessed = false
+	cigar.TBegin, cigar.TEnd = 0, 0
+	cigar.QBegin, cigar.QEnd = 0, 0
 
 	cigar.AlignLen = 0
 	cigar.Matches = 0
