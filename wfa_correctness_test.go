@@ -1,9 +1,13 @@
 package wfa
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
+	"os"
+	"os/exec"
 	"testing"
+	"time"
 )
 
 const maxInt = int(^uint(0) >> 1)
@@ -209,5 +213,65 @@ func TestAlignerPoolResetsAdaptiveReduction(t *testing.T) {
 	defer RecycleAligner(algn)
 	if algn.ad != nil {
 		t.Fatal("pooled aligner retained adaptive-reduction settings")
+	}
+}
+
+// TestAdaptiveGlobalTerminalGap checks the fragment that stalled genome compare.
+// Isolate the alignment so a regression cannot leave an unbounded score loop.
+func TestAdaptiveGlobalTerminalGap(t *testing.T) {
+	if os.Getenv("WFA_TEST_TERMINAL_GAP") != "1" {
+		exe, err := os.Executable()
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cmd := exec.CommandContext(ctx, exe, "-test.run=^TestAdaptiveGlobalTerminalGap$", "-test.v")
+		cmd.Env = append(os.Environ(), "WFA_TEST_TERMINAL_GAP=1")
+		output, err := cmd.CombinedOutput()
+		if ctx.Err() != nil {
+			t.Fatalf("adaptive global alignment did not terminate: %v\n%s", ctx.Err(), output)
+		}
+		if err != nil {
+			t.Fatalf("alignment failed: %v\n%s", err, output)
+		}
+		return
+	}
+	query := []byte("CCTGTTGCTCCTGTTGCTCCTGTTGGACCTGTTGCTCCATCTGCTCCTGTATTTCCTGTTGCTCCTGTTGGACCTGTTGCTCCATCTGCTCCTGTATTTCCTGTTGCTCCTGTTGCTCCTGTTGGACCTGCTACTCCATCTGCTCCTGTATTTCCTGTTGCTCCTGTTGGACCTGTTGCTCCATCTGCTCCTGTTGGACCTGTCGCTCCTGTTGCCCCTGTTGCTCCTGTTATTCCTACTCCTGTTGGGCCTGTTGCTCCTGTTGGACCTGTTGCTCCAGGTGTTCCTGCTGCTCCTGTTGCTCCTGTTGGGCCTACTAATCCATTTGCTCCTGTTGCCCCTGTTGCTCCTGTTGGACCTGTTACTCCTGTTGCTCCGTCTGCTCCTGTTGCCCCTGTTGCTCCTGTTGCTCCTGTT")
+	target := []byte("CCTGTTGCTCCTGTTGCTCCTGTTGCTCCTGTTGGGCCTGTTGCTCCTGTATTTCCTGTTGCTCCTGTTGCTCCTGTTGGACCTGCTACTCCATCTGCTCCTGTATTTCCTGTTGCTCCTGTTGGACCTGTTGCTCCATCTGCTCCTGTTGGACCTGTCGCTCCTGTTGCCCCTGTTGCTCCTGTTATTCCTACTCCTGTTGGGCCTGTTGCTCCTGTTGGACCTGTTGCTCCAGGTGTTCCTGCTGCTCCTGTTGCTCCTGTTGGGCCTACTAATCCATTTGCTCCTGTTGCCCCTGTTGCTCCTGTTGGACCTGTTACTCCTGTTGCTCCGTCTGCTCCTGTTGCCCCTGTT")
+	for _, pair := range [][2][]byte{{query, target}, {target, query}} {
+		algn := New(DefaultPenalties, &Options{GlobalAlignment: true})
+		if err := algn.AdaptiveReduction(DefaultAdaptiveOption); err != nil {
+			t.Fatal(err)
+		}
+		result, err := algn.Align(pair[0], pair[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		validateGlobalResult(t, pair[0], pair[1], DefaultPenalties, result)
+		RecycleAlignmentResult(result)
+		RecycleAligner(algn)
+	}
+}
+
+// TestAdaptiveReductionRetainsGlobalBoundary keeps terminal-gap paths eligible.
+func TestAdaptiveReductionRetainsGlobalBoundary(t *testing.T) {
+	algn := New(DefaultPenalties, &Options{GlobalAlignment: true})
+	defer RecycleAligner(algn)
+	if err := algn.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: 1, MaxDistDiff: 20}); err != nil {
+		t.Fatal(err)
+	}
+	query, target := make([]byte, 100), make([]byte, 100)
+	algn.initComponents(&query, &target)
+	const score = 10
+	algn.M.Set(score, -20, 80, wfaMatch) // Query end: 20 target bases remain.
+	algn.M.Set(score, -10, 5, wfaMatch)  // A distant interior path triggers pruning.
+	algn.M.Set(score, 0, 50, wfaMatch)
+	algn.M.Set(score, 20, 100, wfaMatch) // Target end: 20 query bases remain.
+	algn.reduce(&query, &target, score)
+	for _, k := range []int{-20, 20} {
+		if _, _, ok := algn.M.GetAfterDiff(score, 0, k); !ok {
+			t.Errorf("pruned valid terminal-gap path at diagonal %d", k)
+		}
 	}
 }

@@ -1,5 +1,7 @@
 # Changelog
 
+- v0.5.1
+    - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
 - v0.5.0
     - fix global alignment to use standard end-to-end semantics and WFA2-compatible tie-breaking.
     - speed up wavefront computation and reduce steady-state memory allocations.

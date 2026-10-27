@@ -486,6 +486,12 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 	var v, h int
 	lenQ := len(*q)
 	lenT := len(*t)
+	// Global boundary cells can still reach the endpoint through terminal gaps.
+	// Excluding them from distance estimates can prune every completing path.
+	maxV, maxH := lenQ-1, lenT-1
+	if algn.opt.GlobalAlignment {
+		maxV, maxH = lenQ, lenT
+	}
 	var ok bool
 
 	var d, minDist int
@@ -501,7 +507,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 
 		h = int(offset) // x
 		v = h - k       // y
-		if v < 0 || v >= lenQ || h >= lenT {
+		if v < 0 || v > maxV || h > maxH {
 			*ds = append(*ds, -1)
 			continue
 		}
