@@ -2,6 +2,7 @@ package wfa
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/rand"
 	"os"
@@ -273,5 +274,194 @@ func TestAdaptiveReductionRetainsGlobalBoundary(t *testing.T) {
 		if _, _, ok := algn.M.GetAfterDiff(score, 0, k); !ok {
 			t.Errorf("pruned valid terminal-gap path at diagonal %d", k)
 		}
+	}
+}
+
+// TestAdaptiveScoreMatchesCIGAR covers adjacent gaps reopened after pruning.
+func TestAdaptiveScoreMatchesCIGAR(t *testing.T) {
+	query, target := []byte("TCAAGAGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGAG"), []byte("ATCAATCAAGGTCGGTCAAGGTCAACAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGGTCAAGATCAAGCAAGG")
+	algn := New(DefaultPenalties, DefaultOptions)
+	defer RecycleAligner(algn)
+	if err := algn.AdaptiveReduction(DefaultAdaptiveOption); err != nil {
+		t.Fatal(err)
+	}
+	result, err := algn.Align(query, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer RecycleAlignmentResult(result)
+	validateGlobalResult(t, query, target, DefaultPenalties, result)
+	if result.Score != 62 {
+		t.Fatalf("score=%d, want 62", result.Score)
+	}
+}
+
+// TestSemiGlobalLegacyExamples preserves the established endpoint constraints.
+// A cheap corner overlap must not replace the README's longer alignment.
+func TestSemiGlobalLegacyExamples(t *testing.T) {
+	for _, adaptive := range []bool{false, true} {
+		for _, tc := range []struct {
+			q, target, cigar string
+			score, matches   uint32
+		}{
+			{"Bioinformatics helps Biology", "We learn bioinformatics to help biologists", "9I1X14M3I4M1D1M1X5M1X3I", 32, 24},
+			{"ACCATACTCG", "AGGATGCTCG", "1M2X2M1X4M", 12, 7},
+			{"ACGATCTCG", "CAGGCTCCTCGG", "1I1M1X1M1X2M1I3M1I", 16, 7},
+			{"AC", "CA", "2X", 8, 0},
+			{"TTAC", "ACGG", "2H2M2I", 10, 2},
+			{"AAAA", "AAAA", "4M", 0, 4},
+			{"A", "CA", "1I1M", 0, 1},
+			{"CA", "A", "1H1M", 0, 1},
+		} {
+			t.Run(fmt.Sprintf("adaptive=%v/%s/%s", adaptive, tc.q, tc.target), func(t *testing.T) {
+				a := New(DefaultPenalties, &Options{GlobalAlignment: false})
+				defer RecycleAligner(a)
+				if adaptive {
+					if err := a.AdaptiveReduction(DefaultAdaptiveOption); err != nil {
+						t.Fatal(err)
+					}
+				}
+				q, target := []byte(tc.q), []byte(tc.target)
+				r, err := a.Align(q, target)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer RecycleAlignmentResult(r)
+				if r.Score != tc.score || r.Matches != tc.matches || r.CIGAR(false) != tc.cigar {
+					t.Fatalf("score=%d matches=%d cigar=%s; want %d, %d, %s", r.Score, r.Matches, r.CIGAR(false), tc.score, tc.matches, tc.cigar)
+				}
+				if tc.q == "Bioinformatics helps Biology" && (r.QBegin != 2 || r.QEnd != 27 || r.TBegin != 11 || r.TEnd != 38 || r.AlignLen != 29 || r.Gaps != 4) {
+					t.Fatalf("README statistics changed: %+v", r)
+				}
+			})
+		}
+	}
+}
+
+// TestInvalidPenaltiesRejectBeforeAlignment prevents zero-cost recurrences.
+func TestInvalidPenaltiesRejectBeforeAlignment(t *testing.T) {
+	for _, p := range []*Penalties{{Mismatch: 0, GapOpen: 6, GapExt: 2}, {Mismatch: 4, GapOpen: 6, GapExt: 0}, {Mismatch: 4, GapOpen: ^uint32(0), GapExt: 1}} {
+		algn := New(p, DefaultOptions)
+		_, err := algn.Align([]byte("A"), []byte("C"))
+		RecycleAligner(algn)
+		if !errors.Is(err, ErrInvalidPenalties) {
+			t.Errorf("penalties %+v: expected ErrInvalidPenalties, got %v", p, err)
+		}
+	}
+}
+
+// TestSemiGlobalLargeMismatch covers sparse initialization at a high score.
+func TestSemiGlobalLargeMismatch(t *testing.T) {
+	p := &Penalties{Mismatch: 5000, GapOpen: 6, GapExt: 2}
+	algn := New(p, &Options{GlobalAlignment: false})
+	defer RecycleAligner(algn)
+	r, err := algn.Align([]byte("A"), []byte("C"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer RecycleAlignmentResult(r)
+	if r.Score != 5000 || r.CIGAR(false) != "1X" {
+		t.Fatalf("score=%d cigar=%s", r.Score, r.CIGAR(false))
+	}
+}
+
+// affineSemiGlobalScore is an independent DP oracle for the historical endpoint
+// constraints: both consumed offsets must reach the shorter sequence length.
+func affineSemiGlobalScore(q, target []byte, p *Penalties) uint32 {
+	cols := len(target) + 1
+	m, ins, del := make([]int, (len(q)+1)*cols), make([]int, (len(q)+1)*cols), make([]int, (len(q)+1)*cols)
+	for i := range m {
+		m[i], ins[i], del[i] = maxInt/4, maxInt/4, maxInt/4
+	}
+	best := maxInt / 4
+	for i := 1; i <= len(q); i++ {
+		for j := 1; j <= len(target); j++ {
+			at := i*cols + j
+			cost := 0
+			if q[i-1] != target[j-1] {
+				cost = int(p.Mismatch)
+			}
+			if i == 1 || j == 1 {
+				m[at] = cost
+			} else {
+				m[at] = m[at-cols-1] + cost
+			}
+			if j > 1 {
+				ins[at] = min(m[at-1]+int(p.GapOpen+p.GapExt), ins[at-1]+int(p.GapExt))
+			}
+			if i > 1 {
+				del[at] = min(m[at-cols]+int(p.GapOpen+p.GapExt), del[at-cols]+int(p.GapExt))
+			}
+			m[at] = min(m[at], ins[at], del[at])
+			if (i == len(q) && j >= len(q)) || (j == len(target) && i >= len(target)) {
+				best = min(best, m[at])
+			}
+		}
+	}
+	return uint32(best)
+}
+
+// TestSemiGlobalAgainstAffineOracle covers edge selection, traceback, and reuse.
+func TestSemiGlobalAgainstAffineOracle(t *testing.T) {
+	for _, p := range []*Penalties{DefaultPenalties, {Mismatch: 3, GapOpen: 0, GapExt: 2}, {Mismatch: 9, GapOpen: 1, GapExt: 1}} {
+		a := New(p, &Options{GlobalAlignment: false})
+		sequences := allDNASequences(5)
+		for _, q := range sequences {
+			for _, s := range sequences {
+				r, err := a.Align(q, s)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if want := affineSemiGlobalScore(q, s, p); r.Score != want {
+					t.Fatalf("q=%s t=%s p=%+v score=%d want=%d cigar=%s", q, s, p, r.Score, want, r.CIGAR(false))
+				}
+				qi, ti := 0, 0
+				for _, packed := range r.Ops {
+					op, n := Op(packed)
+					for j := uint32(0); j < n; j++ {
+						switch op {
+						case 'M', 'X':
+							if qi >= len(q) || ti >= len(s) || (op == 'M') != (q[qi] == s[ti]) {
+								t.Fatalf("q=%s t=%s: invalid CIGAR %s", q, s, r.CIGAR(false))
+							}
+							qi++
+							ti++
+						case 'I':
+							ti++
+						case 'D', 'H':
+							qi++
+						default:
+							t.Fatalf("unexpected CIGAR operation %c", op)
+						}
+					}
+				}
+				if qi != len(q) || ti != len(s) {
+					t.Fatalf("CIGAR consumed %d/%d, want %d/%d", qi, ti, len(q), len(s))
+				}
+				RecycleAlignmentResult(r)
+			}
+		}
+		RecycleAligner(a)
+	}
+}
+
+// TestSemiGlobalPaidTerminalGaps distinguishes real free clipping from an end
+// gap needed to satisfy the endpoint constraint, even after CIGAR runs merge.
+func TestSemiGlobalPaidTerminalGaps(t *testing.T) {
+	p := &Penalties{Mismatch: 9, GapOpen: 1, GapExt: 1}
+	for _, tc := range []struct{ q, target, cigar string }{
+		{"AAAC", "CCCCCCC", "3H1M6I"},
+		{"CCCCCCC", "AAAC", "3I1M3D3H"},
+	} {
+		a := New(p, &Options{GlobalAlignment: false})
+		r, err := a.Align([]byte(tc.q), []byte(tc.target))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if r.Score != 4 || r.CIGAR(false) != tc.cigar {
+			t.Fatalf("score=%d cigar=%s; want 4, %s", r.Score, r.CIGAR(false), tc.cigar)
+		}
+		RecycleAlignmentResult(r)
+		RecycleAligner(a)
 	}
 }

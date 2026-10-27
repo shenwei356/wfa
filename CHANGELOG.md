@@ -2,6 +2,11 @@
 
 - v0.5.1
     - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
+    - preserve semi-global endpoint constraints and fix traceback through first-row or first-column gaps.
+    - report the gap-affine score of the final CIGAR after merging adjacent gaps.
+    - return empty trimmed output when no bases match.
+    - reject unsupported zero-cost penalties and overflowing gap-open costs, and support sparse high scores.
+    - wfa-go: validate sequence pairs and report input, output, and flush errors.
 - v0.5.0
     - fix global alignment to use standard end-to-end semantics and WFA2-compatible tie-breaking.
     - speed up wavefront computation and reduce steady-state memory allocations.

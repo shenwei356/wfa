@@ -22,6 +22,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -31,9 +32,14 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.5.0"
+var version = "0.5.1"
 
 func main() {
+	checkError(run())
+}
+
+// run returns errors after flushing output and recycling alignment resources.
+func run() (err error) {
 	app := filepath.Base(os.Args[0])
 	usage := fmt.Sprintf(`
 WFA alignment in Golang
@@ -43,6 +49,8 @@ WFA alignment in Golang
 Version: v%s
 
 Input file format:
+  Each pair must contain a nonempty >query line followed by a nonempty <target line.
+  Blank lines, invalid prefixes, and incomplete pairs are errors.
   see https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests
   Example:
   >ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
@@ -69,10 +77,10 @@ Options/Flags:
 
 	help := flag.Bool("h", false, "print help message")
 	infile := flag.String("i", "", "input file. ")
-	noGlobal := flag.Bool("g", false, "do not use global alignment")
+	noGlobal := flag.Bool("g", false, "use semi-global alignment with free ends")
 	noAdaptive := flag.Bool("a", false, "do not use adaptive reduction")
 	noOutput := flag.Bool("N", false, "do not output alignment (for benchmark)")
-	trim := flag.Bool("t", false, "only show the aligned region")
+	trim := flag.Bool("t", false, "only show the region from the first to last exact match (empty if none)")
 
 	pprofCPU := flag.Bool("p", false, "cpu pprof. go tool pprof -http=:8080 cpu.pprof")
 	pprofMem := flag.Bool("m", false, "mem pprof. go tool pprof -http=:8080 mem.pprof")
@@ -81,7 +89,7 @@ Options/Flags:
 
 	if *help {
 		flag.Usage()
-		return
+		return nil
 	}
 
 	// go tool pprof -http=:8080 cpu.pprof
@@ -107,19 +115,25 @@ Options/Flags:
 
 	defer func() {
 		wfa.RecycleAligner(algn)
-		outfh.Flush()
+		err = errors.Join(err, outfh.Flush())
 	}()
 
-	falign2Seq := func(q, t string) {
+	falign2Seq := func(q, t string) error {
 
 		_q, _t := []byte(q), []byte(t)
 		result, err := algn.Align(_q, _t)
 		if err != nil {
-			checkError(err)
+			return err
 		}
+		defer wfa.RecycleAlignmentResult(result)
 
 		if !*noOutput {
 			Q, A, T := result.AlignmentText(&_q, &_t, *trim)
+			defer wfa.RecycleAlignmentText(Q, A, T)
+			identity := 0.0
+			if result.AlignLen > 0 {
+				identity = float64(result.Matches) / float64(result.AlignLen) * 100
+			}
 
 			// fmt.Fprintln(outfh, q, t)
 			fmt.Fprintf(outfh, "query   %s\n", *Q)
@@ -131,13 +145,13 @@ Options/Flags:
 			fmt.Fprintf(outfh, "match-region: q[%d, %d]/%d vs t[%d, %d]/%d\n",
 				result.QBegin, result.QEnd, len(_q), result.TBegin, result.TEnd, len(_t))
 			fmt.Fprintf(outfh, "align-length: %d, matches: %d (%.2f%%), gaps: %d, gap regions: %d\n",
-				result.AlignLen, result.Matches, float64(result.Matches)/float64(result.AlignLen)*100,
+				result.AlignLen, result.Matches, identity,
 				result.Gaps, result.GapRegions)
-			fmt.Fprintln(outfh)
-
-			wfa.RecycleAlignmentText(Q, A, T)
+			// bufio.Writer retains earlier write errors; check the final write too.
+			_, err := fmt.Fprintln(outfh)
+			return err
 		}
-		wfa.RecycleAlignmentResult(result)
+		return nil
 	}
 
 	var q, t string
@@ -146,40 +160,51 @@ Options/Flags:
 
 	if *infile == "" {
 		if flag.NArg() != 2 {
-			checkError(fmt.Errorf("if flag -i not given, please give me two sequences. type \"%s -h\" for help.", app))
+			return fmt.Errorf("if flag -i not given, please give me two sequences. type \"%s -h\" for help.", app)
 		}
 		q = flag.Arg(0)
 		t = flag.Arg(1)
 
-		falign2Seq(q, t)
-
-		return
+		return falign2Seq(q, t)
 	}
 
 	// sequence pairs from a file
 
 	fh, err := os.Open(*infile)
 	if err != nil {
-		checkError(fmt.Errorf("failed to read file: %s", *infile))
+		return fmt.Errorf("failed to read file %s: %w", *infile, err)
 	}
+	defer func() { err = errors.Join(err, fh.Close()) }()
 
 	scanner := bufio.NewScanner(fh)
-	var flag bool
+	// Permit the library's supported sequence length, plus prefix and CRLF.
+	scanner.Buffer(make([]byte, 4096), wfa.MaxSeqLen+3)
+	line := 0
 	for scanner.Scan() {
+		line++
 		q = scanner.Text()
-		flag = scanner.Scan()
-		if !flag {
-			break
+		if len(q) < 2 || q[0] != '>' {
+			return fmt.Errorf("%s:%d: expected '>' followed by a nonempty query sequence", *infile, line)
 		}
-
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return fmt.Errorf("read %s:%d: %w", *infile, line+1, err)
+			}
+			return fmt.Errorf("%s:%d: missing target sequence for query on line %d", *infile, line+1, line)
+		}
+		line++
 		t = scanner.Text()
-
-		falign2Seq(q[1:], t[1:])
+		if len(t) < 2 || t[0] != '<' {
+			return fmt.Errorf("%s:%d: expected '<' followed by a nonempty target sequence", *infile, line)
+		}
+		if err := falign2Seq(q[1:], t[1:]); err != nil {
+			return fmt.Errorf("%s:%d: %w", *infile, line, err)
+		}
 	}
-	if err = scanner.Err(); err != nil {
-		checkError(fmt.Errorf("something wrong in reading file: %s", *infile))
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("read %s:%d: %w", *infile, line+1, err)
 	}
-
+	return nil
 }
 
 func checkError(err error) {

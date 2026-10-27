@@ -31,7 +31,7 @@ type AlignmentResult struct {
 	// Ops   []*CIGARRecord
 	Ops []uint64 // 24-bit null + 8 bit Op + 32-bit N
 
-	Score uint32 // Alignment score
+	Score uint32 // Gap-affine cost of the final CIGAR, excluding actual free clipping.
 
 	TBegin, TEnd int // 1-based location of the alignment in target seq, no including flanking clipping/insertion sequences
 	QBegin, QEnd int // 1-based location of the alignment in query seq, no including flanking clipping/insertion sequences
@@ -140,6 +140,10 @@ func (cigar *AlignmentResult) process() {
 		return
 	}
 	s := &cigar.Ops
+	if len(*s) == 0 {
+		cigar.proccessed = true
+		return
+	}
 
 	// reverse the order of all operations.
 	var i, j int
@@ -171,7 +175,7 @@ func (cigar *AlignmentResult) process() {
 	*s = (*s)[:j+1]
 
 	// count matches, gaps
-	var begin, end int
+	begin, end := -1, -1
 	for i, op = range *s {
 		// if op.Op == 'M' {
 		if op>>32 == OpM {
@@ -192,7 +196,7 @@ func (cigar *AlignmentResult) process() {
 	var gaps uint32
 	var gapRegions uint32
 
-	for i = begin; i <= end; i++ {
+	for i = begin; i >= 0 && i <= end; i++ {
 		op = (*s)[i]
 		// alen += op.N
 		alen += uint32(op & MaskLower32)
@@ -231,6 +235,9 @@ func trimOps(ops []uint64) []uint64 {
 			break
 		}
 	}
+	if start < 0 {
+		return nil
+	}
 	return ops[start : end+1]
 }
 
@@ -267,10 +274,12 @@ func (cigar *AlignmentResult) AlignmentText(q0, t0 *[]byte, onlyAignedRegion boo
 		q = *q0
 		t = *t0
 	} else {
-		q = (*q0)[cigar.QBegin-1 : cigar.QEnd]
-		t = (*t0)[cigar.TBegin-1 : cigar.TEnd]
-
 		ops = trimOps(cigar.Ops)
+		// No exact matches means there is no region to trim or slice.
+		if len(ops) > 0 {
+			q = (*q0)[cigar.QBegin-1 : cigar.QEnd]
+			t = (*t0)[cigar.TBegin-1 : cigar.TEnd]
+		}
 	}
 
 	Q := poolBytes.Get().(*[]byte)
@@ -358,4 +367,29 @@ func RecycleAlignmentText(Q, A, T *[]byte) {
 		*T = (*T)[:0]
 		poolBytes.Put(T)
 	}
+}
+
+// alignmentScore charges the canonical CIGAR, excluding only recorded free
+// clipping. A terminal gap can be paid, or contain both paid and free bases.
+func (cigar *AlignmentResult) alignmentScore(p *Penalties, freeLeading, freeTrailing uint32) uint32 {
+	var score uint32
+	for i, packed := range cigar.Ops {
+		op, n := Op(packed)
+		if i == 0 {
+			n -= min(n, freeLeading)
+		}
+		if i == len(cigar.Ops)-1 {
+			n -= min(n, freeTrailing)
+		}
+		if n == 0 {
+			continue
+		}
+		switch op {
+		case 'X':
+			score += n * p.Mismatch
+		case 'I', 'D':
+			score += p.GapOpen + n*p.GapExt
+		}
+	}
+	return score
 }

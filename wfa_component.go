@@ -147,7 +147,7 @@ func (cpt *Component) KRange(s, diff uint32) (int, int) {
 
 // Set sets an offset with a given backtrace type for a score.
 func (cpt *Component) Set(s uint32, k int, offset uint32, wfaType uint32) {
-	if s >= uint32(len(cpt.WaveFronts)) {
+	for s >= uint32(len(cpt.WaveFronts)) {
 		cpt.WaveFronts = append(cpt.WaveFronts, _WAVEFRONTS_GROW_SLICE...)
 	}
 	wf := cpt.WaveFronts[s]
@@ -189,7 +189,7 @@ func (cpt *Component) waveFrontForRange(s uint32, lo, hi int) *WaveFront {
 // Set sets an offset which has already contain a backtrace type for a score.
 // Here, offsetWithType = offset<<wfaTypeBits | wfaType.
 func (cpt *Component) SetRaw(s uint32, k int, offset uint32) {
-	if s >= uint32(len(cpt.WaveFronts)) {
+	for s >= uint32(len(cpt.WaveFronts)) {
 		cpt.WaveFronts = append(cpt.WaveFronts, _WAVEFRONTS_GROW_SLICE...)
 	}
 	wf := cpt.WaveFronts[s]

@@ -82,6 +82,22 @@ align-length: 29, matches: 24 (82.76%), gaps: 4, gap regions: 2
 - All objects are saved in object pools for computation efficiency.
   Just don't forget to recycle them.
 
+more details
+
+- `Mismatch` and `GapExt` must be positive. `GapOpen` may be zero, and
+  `GapOpen + GapExt` must fit in `uint32`. `Align` and `AlignPointers` return
+  `ErrInvalidPenalties` for unsupported penalties.
+- `AlignmentResult.Score` is the gap-affine cost of the returned CIGAR.
+  Adaptive reduction is heuristic and may return a nonoptimal alignment.
+- Semi-global alignment retains its established endpoint constraint: the shorter
+  sequence is consumed, and the consumed offset in the other sequence must be
+  at least that length. This is a constraint on endpoint positions, not a minimum
+  length of the matched region. Only actual free flanks are excluded from the score;
+  terminal gaps needed to reach an eligible endpoint remain charged.
+- Coordinates and alignment statistics describe the region from the first to
+  last exact match. With no exact matches, they are zero; `CIGAR(true)` and
+  `AlignmentText(..., true)` return empty output. Untrimmed output remains available.
+
 
 ## Examples
 
@@ -125,27 +141,19 @@ align-length: 10, matches: 7 (70.00%), gaps: 0, gapRegions: 0
 
 Semi-global alignment
 
-|   |   |  1  |  2  |  3   |  4   |  5   |  6   |  7  |  8   |  9   | 10  | 11   | 12  |
-|:-:|:-:|:---:|:---:|:----:|:----:|:----:|:----:|:---:|:----:|:----:|:---:|:----:|:---:|
-|   |   |  C  |  A  |  G   |  G   |  C   |  T   |  C  |  C   |  T   |  C  |  G   |  G  |
-|1  |A  |⬂ 4  |⬊ 0  |⬂ 4   |⬂ 4   |⬂ 4   |⬂ 4   |⬂ 4  |⬂ 4   |⬂ 4   |⬂ 4  |⬂ 4   |⬂ 4  |
-|2  |C  |⬊ 0  |⬂ 8  |⬂ 4   |⬂ 8   |⬊ 4   |⬂ 8   |⬊ 4  |⬊ 4   |⬂ 8   |⬊ 4  |⬂ 8   |⬂ 8  |
-|3  |G  |⬂ 4  |⬂ 4  |⬊ 8   |⬊ 4   |⬂12   |⬂ 8   |⬂12  |⬂ 8   |⬂ 8   |  .  |⬊ 4   |⬊ 8  |
-|4  |A  |⬂ 4  |⬊ 4  |⬂ 8   |⬂12   |⬂ 8   |🠧14   |⬂12  |🠧14   |⬂12   |⬂12  |↧12   |⬂ 8  |
-|5  |T  |⬂ 4  |⬂ 8  |⬂ 8   |⬂12   |  .   |⬊ 8   |  .  |⬂16   |⬊14   |  .  |🠧14   |⬂16  |
-|6  |C  |⬊ 0  |⬂ 8  |🠦10   |⬂12   |⬊12   |🠦18   |⬊ 8  |⟼16   |🠦18   |⬊14  |🠧16   |⬂18  |
-|7  |T  |⬂ 4  |⬂ 4  |  .   |  .   |  .   |⬊12   |↧16  |⬂12   |⬊16   |  .  |⬂18   |⬂20  |
-|8  |C  |⬊ 0  |⬂ 8  |⬂ 8   |🠦12   |🠦14   |🠦16   |⬊12  |⬊16   |⬂16   |⬊16  |🠧20   |  .  |
-|9  |G  |⬂ 4  |⬂ 4  |⬊ 8   |⬊ 8   |⬂16   |⬂18   |⬂20  |⬂16   |⬂20   |⬂20  |⬊16   |⬊20  |
+Flanking bases are excluded from the reported aligned region while the endpoint
+constraint described above is preserved.
+
 ```
-CIGAR:  1I1M1X1M1X1M1I4M1I
-query   -ACGAT-CTCG-
-         | | | ||||
+$ wfa-go -g ACGATCTCG CAGGCTCCTCGG
+query   -ACGATC-TCG-
+         | | || |||
 target  CAGGCTCCTCGG
+cigar   1I1M1X1M1X2M1I3M1I
 
 align-score : 16
-align-region: q[1, 9] vs t[2, 11]
-align-length: 10, matches: 7 (70.00%), gaps: 1, gapRegions: 1
+match-region: q[1, 9]/9 vs t[2, 11]/12
+align-length: 10, matches: 7 (70.00%), gaps: 1, gap regions: 1
 ```
 
 ## Usages
@@ -183,13 +191,13 @@ result, err := algn.Align(q, t)
 checkErr(err)
 
 // score table of M
-algn.Plot(&q, &t, os.Stdout, algn.M, true)
+algn.Plot(&q, &t, os.Stdout, algn.M, true, -1)
 
 if outputAlignment {
     fmt.Println()
-    fmt.Printf("CIGAR:  %s\n", result.CIGAR())
+    fmt.Printf("CIGAR:  %s\n", result.CIGAR(false))
 
-    Q, A, T := result.AlignmentText(&q, &t)
+    Q, A, T := result.AlignmentText(&q, &t, false)
     fmt.Printf("query   %s\n", *Q)
     fmt.Printf("        %s\n", *A)
     fmt.Printf("target  %s\n", *T)
@@ -221,6 +229,9 @@ A [CLI](https://github.com/shenwei356/wfa/blob/main/wfa-go/wfa-go.go)
 (download [binaries](https://github.com/shenwei356/wfa/releases)) is available to
 align two sequences from either positional arguments or an input file
 ([format](https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests)).
+Each pair requires a nonempty `>` query line followed by a nonempty `<` target
+line. Blank lines, invalid prefixes, and incomplete pairs are errors. Read and
+write failures, including a failed output flush, produce a nonzero exit status.
 
 <details>
 <summary>Example</summary>
@@ -243,14 +254,23 @@ From a input file, for benchmark.
 
 ```
 $ wfa-go -i seqs.txt
-query   A-TTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
-          |||||||||||||| ||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||| ||||||||||||
+query   -ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
+         ||||||||||||||| ||||||||||||||||||||||||||||||||||||||| ||||||||||||||||||||||||||||||| ||||||||||||
 target  GATTGGAAAATAGGAT-GGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTT-GTCGTCCTTACGTTTCCGGAAGGGAGTGGTT-GCTCGAAGCCCA
-cigar   1X1I14M1D39M1D31M1D12M
+cigar   1I15M1D39M1D31M1D12M
 
-align-score : 36
-match-region: q[2, 100]/100 vs t[3, 98]/98
-align-length: 99, matches: 96 (96.97%), gaps: 3, gap regions: 3
+align-score : 32
+match-region: q[1, 100]/100 vs t[2, 98]/98
+align-length: 100, matches: 97 (97.00%), gaps: 3, gap regions: 3
+
+query   CCGTAGAGTTAGACACTCGACCGTGGTGAATCCGCGA-CCACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGC-AGTGATTAAAC
+        || |||||||||||||||||||||||||||||||||| | |||||||||||||||||||||||||||||||||||||||||||||||||| |||||||||||
+target  CC-TAGAGTTAGACACTCGACCGTGGTGAATCCGCGATCTACCGCTTTGACGGGCGCTCTACGGTATCCCGCGATTTGTGTACGTGAAGCGAGTGATTAAAC
+cigar   2M1D34M1I1M1X50M1I11M
+
+align-score : 28
+match-region: q[1, 100]/100 vs t[1, 101]/101
+align-length: 102, matches: 98 (96.08%), gaps: 3, gap regions: 3
 ```
 </details>
 
@@ -258,13 +278,16 @@ align-length: 99, matches: 96 (96.97%), gaps: 3, gap regions: 3
 <summary>Usage</summary>
 
 ```
+$ wfa-go -h
 WFA alignment in Golang
 
  Author: Wei Shen <shenwei356@gmail.com>
    Code: https://github.com/shenwei356/wfa
-Version: v0.5.0
+Version: v0.5.1
 
 Input file format:
+  Each pair must contain a nonempty >query line followed by a nonempty <target line.
+  Blank lines, invalid prefixes, and incomplete pairs are errors.
   see https://github.com/smarco/WFA-paper?tab=readme-ov-file#41-introduction-to-benchmarking-wfa-simple-tests
   Example:
   >ATTGGAAAATAGGATTGGGGTTTGTTTATATTTGGGTTGAGGGATGTCCCACCTTCGTCGTCCTTACGTTTCCGGAAGGGAGTGGTTAGCTCGAAGCCCA
@@ -284,13 +307,13 @@ Usage:
 Options/Flags:
   -N    do not output alignment (for benchmark)
   -a    do not use adaptive reduction
-  -g    do not use global alignment
+  -g    use semi-global alignment with free ends
   -h    print help message
   -i string
-        input file. 
+        input file.
   -m    mem pprof. go tool pprof -http=:8080 mem.pprof
   -p    cpu pprof. go tool pprof -http=:8080 cpu.pprof
-  -t    only show the aligned region
+  -t    only show the region from the first to last exact match (empty if none)
 ```
 </details>
 

@@ -29,6 +29,8 @@ import (
 )
 
 // Penalties contains the gap-affine penalties, Match is 0.
+// Mismatch and GapExt must be positive; GapOpen may be zero.
+// GapOpen + GapExt must fit in uint32.
 type Penalties struct {
 	Mismatch uint32
 	GapOpen  uint32
@@ -198,6 +200,9 @@ const MaxSeqLen int = 1<<(32-wfaTypeBits) - 1
 // ErrSeqTooLong means the sequence is too long.
 var ErrSeqTooLong error = fmt.Errorf("wfa: sequences longer than %d are not supported", MaxSeqLen)
 
+// ErrInvalidPenalties means the penalties cannot support score-ordered recurrence.
+var ErrInvalidPenalties = fmt.Errorf("wfa: mismatch and gap extension must be positive, and gap open + extension must fit in uint32")
+
 // Align performs alignment with two sequences.
 func (algn *Aligner) Align(q, t []byte) (*AlignmentResult, error) {
 	return algn.AlignPointers(&q, &t)
@@ -205,6 +210,9 @@ func (algn *Aligner) Align(q, t []byte) (*AlignmentResult, error) {
 
 // AlignPointers performs alignment with two sequences. The arguments are pointers.
 func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
+	if algn.p == nil || algn.p.Mismatch == 0 || algn.p.GapExt == 0 || algn.p.GapOpen > math.MaxUint32-algn.p.GapExt {
+		return nil, ErrInvalidPenalties
+	}
 	m, n := len(*t), len(*q)
 
 	if n == 0 || m == 0 {
@@ -239,8 +247,7 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 			// fmt.Printf("max offset: %d, Aoffset: %d\n", (*(*M)[s])[Ak], Aoffset)
 
 			offset, _, _ = M.GetAfterDiff(s, 0, Ak)
-			if offset >= Aoffset { // reached the end
-				// fmt.Printf("reach end, s:%d, k:%d, offset:%d, Aoffset:%d\n", s, Ak, offset>>wfaTypeBits, Aoffset)
+			if offset >= Aoffset {
 				break
 			}
 
@@ -256,23 +263,18 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 		algn.next(q, t, s)
 	}
 
-	// M.Print(os.Stdout, "M")
-
-	// bottom right cell
-	minS, lastK := s, Ak
-	// fmt.Printf("min s:%d, k:%d\n", minS, lastK)
-	if !algn.opt.GlobalAlignment { // find the minimum score on the last row/column
-		minS, lastK = algn.backtraceStartPosistion(q, t, s)
-		// fmt.Printf("new min s:%d, k:%d\n", minS, lastK)
+	minScore, lastK := s, Ak
+	if !algn.opt.GlobalAlignment {
+		// Keep the established endpoint constraints and tie order. An arbitrary
+		// corner overlap can otherwise beat a meaningful longer alignment.
+		minScore, lastK = algn.backtraceStartPosistion(q, t, s)
 	}
-	// offset, _, _ = M.Get(minS, 0, lastK)
-	// h := offset
-	// v := h - uint32(lastK)
-	// fmt.Printf("min s:%d, k:%d, h:%d, v:%d\n", minS, lastK, h, v)
-
-	return algn.backTrace(q, t, minS, lastK), nil
+	return algn.backTrace(q, t, minScore, lastK), nil
 }
 
+// backtraceStartPosistion preserves the historical semi-global endpoint search.
+// Both consumed offsets must reach the shorter sequence length; these are
+// absolute offsets, not the lengths of the matched region. Scan order breaks ties.
 func (algn *Aligner) backtraceStartPosistion(q, t *[]byte, s uint32) (uint32, int) {
 	M := algn.M
 	m, n := len(*t), len(*q)
@@ -817,6 +819,7 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	var h0 int
 	var op byte
 	var qBegin, tBegin int
+	var freeLeading, freeTrailing uint32 // Actual free clipping, before CIGAR merging.
 
 	var v1, v2, Isk, Dsk, offset0 uint32
 	var fromMI, fromMD, sourceFound bool
@@ -842,13 +845,20 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	v = h - k
 
 	if h < lenT {
-		cigar.AddN(wfaOps[wfaInsertOpen], uint32(lenT)-uint32(h))
+		freeTrailing = uint32(lenT - h)
+		cigar.AddN(wfaOps[wfaInsertOpen], freeTrailing)
 	} else if v < lenQ {
-		cigar.AddN('H', uint32(lenQ)-uint32(v))
+		freeTrailing = uint32(lenQ - v)
+		cigar.AddN('H', freeTrailing)
 	}
 
 LOOP:
 	for v > 0 && h > 0 {
+		// Only a seeded base pair ends a semi-global traceback. A gap on
+		// the first row/column must still be traced back to that seed.
+		if semiGlobal && (h == 1 || v == 1) && (wfaType == wfaMatch || wfaType == wfaMismatch) {
+			break
+		}
 		// fmt.Printf("------\ncurrent s: %d, k: %d, h: %d, v: %d\n", s, k, h, v)
 
 		// -----------------------------------------------------------------------------
@@ -972,11 +982,6 @@ LOOP:
 		cigar.AddN(op, 1)
 		// fmt.Printf("  [ADD]: %s as %d%c, h:%d, v:%d\n", wfaType2str(wfaType), 1, op, h, v)
 
-		if semiGlobal && (h == 1 || v == 1) {
-			// fmt.Printf("  break as reached 1th row/col\n")
-			break
-		}
-
 		// -----------------------------------------------------------------------------
 		// for next one
 
@@ -1048,6 +1053,7 @@ LOOP:
 		}
 		cigar.TBegin, cigar.QBegin = tBegin, qBegin
 		cigar.process()
+		cigar.Score = cigar.alignmentScore(p, 0, 0)
 		return cigar
 	}
 
@@ -1092,16 +1098,19 @@ LOOP:
 	}
 
 	if v > 1 {
-		cigar.AddN('H', uint32(v-1))
+		freeLeading = uint32(v - 1)
+		cigar.AddN('H', freeLeading)
 	}
 
 	if h > 1 {
-		cigar.AddN(wfaOps[wfaInsertOpen], uint32(h-1))
+		freeLeading = uint32(h - 1)
+		cigar.AddN(wfaOps[wfaInsertOpen], freeLeading)
 	}
 
 	// fmt.Printf("  == start position of matched region, t:%d, q:%d\n", tBegin, qBegin)
 	cigar.TBegin, cigar.QBegin = tBegin, qBegin
 
 	cigar.process()
+	cigar.Score = cigar.alignmentScore(p, freeLeading, freeTrailing)
 	return cigar
 }
