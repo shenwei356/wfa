@@ -1,6 +1,6 @@
 # Changelog
 
-- v0.5.1
+- v0.5.2
     - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
     - preserve semi-global endpoint constraints and fix traceback through first-row or first-column gaps.
     - report the gap-affine score of the final CIGAR after merging adjacent gaps.

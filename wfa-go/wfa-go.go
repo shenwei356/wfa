@@ -32,7 +32,7 @@ import (
 	"github.com/shenwei356/wfa"
 )
 
-var version = "0.5.1"
+var version = "0.5.2"
 
 func main() {
 	checkError(run())
