@@ -60,121 +60,68 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, _M *Component, notChangeT
 
 	// ----------------------------------------------------------------
 	// fill in scores
-	var ok bool
-	var k int
-	var offset, wfaType uint32
-	var v, h int
-	var n, vp, hp, v0, h0 int
-
-	var v1, v2, Isk, Dsk, offset0 uint32
-	var h00 int
-
 	for s, wf := range _M.WaveFronts {
 		if wf == nil {
 			continue
 		}
-
 		if maxScore >= 0 && s > maxScore {
 			break
 		}
-
-		// fmt.Printf("s: %d\n", s)
-		for k = wf.Lo; k <= wf.Hi; k++ {
-			offset, wfaType, ok = wf.Get(k)
+		for k := wf.Lo; k <= wf.Hi; k++ {
+			offset, wfaType, ok := wf.Get(k)
 			if !ok {
 				continue
 			}
-			// fmt.Printf("  k:%d, offset:%d\n", k, offset)
 
-			h = int(offset) - 1 // 0-based now
-			v = h - k
-
-			// fmt.Printf("   v (0-based): %d, h (0-based): %d\n", v, h)
-			if v < 0 || h < 0 || v >= lenQ || h >= lenT {
-				continue
+			// Only M extends matches. Follow its recorded predecessor so rejected
+			// transitions cannot change the first cell drawn for this wavefront.
+			startOffset := offset
+			if isM {
+				var found bool
+				switch wfaType {
+				case wfaInsertOpen:
+					startOffset, _, found = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k-1)
+					startOffset++
+				case wfaInsertExt:
+					startOffset, _, found = I.GetAfterDiff(uint32(s), p.GapExt, k-1)
+					startOffset++
+				case wfaDeleteOpen:
+					startOffset, _, found = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k+1)
+				case wfaDeleteExt:
+					startOffset, _, found = D.GetAfterDiff(uint32(s), p.GapExt, k+1)
+				case wfaMismatch:
+					startOffset, _, found = M.GetAfterDiff(uint32(s), p.Mismatch, k)
+					startOffset++
+				case wfaMatch:
+					startOffset, found = 0, true // The global score-zero origin.
+					if !algn.opt.GlobalAlignment {
+						startOffset = uint32(max(k+1, 1)) // First-row/column seed.
+					}
+				}
+				if !found {
+					startOffset = offset
+					if !algn.opt.GlobalAlignment && wfaType == wfaMismatch {
+						startOffset = uint32(max(k+1, 1)) // A mismatch seed has no predecessor.
+					}
+				}
 			}
 
-			if (*(*m)[v])[h] >= 0 { // recorded with a lower score.
-				continue
-			}
-
-			// fmt.Printf("    fill h (1-based):%d, v (1-based):%d\n", h+1, v+1)
-			(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
-
-			if !isM || (*q)[v] != (*t)[h] {
-				continue
-			}
-
-			// ---------------------------------
-
-			switch wfaType {
-			case wfaInsertExt:
-				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k-1)
-				v2, _, _ = I.GetAfterDiff(uint32(s), p.GapExt, k-1)
-				offset0 = max(v1, v2) + 1
-			case wfaDeleteExt:
-				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k+1)
-				v2, _, _ = D.GetAfterDiff(uint32(s), p.GapExt, k+1)
-				offset0 = max(v1, v2)
-			default:
-				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k-1)
-				v2, _, _ = I.GetAfterDiff(uint32(s), p.GapExt, k-1)
-				Isk = max(v1, v2) + 1
-
-				v1, _, _ = M.GetAfterDiff(uint32(s), p.GapOpen+p.GapExt, k+1)
-				v2, _, _ = D.GetAfterDiff(uint32(s), p.GapExt, k+1)
-				Dsk = max(v1, v2)
-
-				v1, _, _ = M.GetAfterDiff(uint32(s), p.Mismatch, k)
-				offset0 = max(Isk, Dsk, v1+1)
-			}
-
-			h00 = int(offset0) - 1 // 0-based here
-
-			// fmt.Printf("    start h: %d, current h: %d\n", h00+1, h+1)
-
-			if h == h00 { // were not extended at all
-				continue
-			}
-
-			// change it to match
-			v0, h0 = v, h
-			if !notChangeToMatch {
-				// fmt.Printf("    change %s to match: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
-				(*(*m)[v0])[h0] = int32(s)<<wfaTypeBits | int32(wfaMatch)
-			}
-			n = 0
-			for {
-				h--
-				v--
+			// Draw the initial operation and its extension separately. A leading
+			// gap may start outside the matrix; do not move its symbol onto a match.
+			startH := int(startOffset) - 1
+			for h := int(offset) - 1; h >= startH; h-- {
+				v := h - k
 				if v < 0 || h < 0 {
 					break
 				}
-				n++
-
-				if (*(*m)[v])[h] >= 0 {
-					continue
+				if v >= lenQ || h >= lenT || (*(*m)[v])[h] >= 0 {
+					continue // Keep cells already reached at a lower score.
 				}
-
-				if !notChangeToMatch {
-					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaMatch) // mark as match
-					// fmt.Printf("    change %s to match: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
-				} else {
-					(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(wfaType)
+				typ := wfaType
+				if isM && !notChangeToMatch && h > startH {
+					typ = wfaMatch
 				}
-
-				vp, hp = v, h // for the last one (or the original one in the normal order), we will restore it.
-
-				if (*q)[v] != (*t)[h] || h == h00 {
-					break
-				}
-			}
-			if n == 0 { // just itself
-				vp, hp = v0, h0
-			}
-			if !notChangeToMatch {
-				(*(*m)[vp])[hp] = int32(s)<<wfaTypeBits | int32(wfaType) // set back to the original type
-				// fmt.Printf("    change %s back: h (1-based):%d, v (1-based):%d\n", wfaType2str(wfaType), h+1, v+1)
+				(*(*m)[v])[h] = int32(s)<<wfaTypeBits | int32(typ)
 			}
 		}
 	}

@@ -92,6 +92,26 @@ Options/Flags:
 		return nil
 	}
 
+	// Profiling creates or truncates a fixed output file before input is read.
+	// Reject aliases, including symbolic and hard links, before starting it.
+	if *infile != "" && (*pprofCPU || *pprofMem) {
+		profileFile := "mem.pprof"
+		if *pprofCPU {
+			profileFile = "cpu.pprof"
+		}
+		inputInfo, err := os.Stat(*infile)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %w", *infile, err)
+		}
+		profileInfo, err := os.Stat(profileFile)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to inspect profile output %s: %w", profileFile, err)
+		}
+		if profileInfo != nil && os.SameFile(inputInfo, profileInfo) {
+			return fmt.Errorf("input file %q aliases profile output %q", *infile, profileFile)
+		}
+	}
+
 	// go tool pprof -http=:8080 cpu.pprof
 	if *pprofCPU {
 		defer profile.Start(profile.CPUProfile, profile.ProfilePath(".")).Stop()

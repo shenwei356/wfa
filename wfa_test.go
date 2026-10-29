@@ -149,7 +149,7 @@ func TestWFA(_t *testing.T) {
 	}
 
 	// fmt.Printf("\n---------------- M ----------------\n")
-	// algn.M.Print(os.Stdout, "M")
+	algn.M.Print(os.Stdout, "M")
 	fmt.Fprintln(os.Stdout)
 	algn.Plot(&q, &t, os.Stdout, algn.M, true, -1)
 

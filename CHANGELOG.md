@@ -8,6 +8,8 @@
     - preserve unsigned adaptive thresholds and CIGAR counts on 32-bit systems.
     - reject nil adaptive options and correct insertion/deletion component plots.
     - stop packaging after a failed build without deleting previous release artifacts.
+    - fix match-extension symbols and predecessor tracking in wavefront plots.
+    - wfa-go: reject input files that alias CPU or memory profile output.
 - v0.5.2
     - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
     - preserve semi-global endpoint constraints and fix traceback through first-row or first-column gaps.
