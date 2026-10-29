@@ -26,3 +26,13 @@ func TestTrimWithoutMatches(t *testing.T) {
 		RecycleAligner(a)
 	}
 }
+
+// TestCIGARLargeOperationCount must format uint32 counts without signed-int conversion.
+func TestCIGARLargeOperationCount(t *testing.T) {
+	r := NewAlignmentResult(true)
+	defer RecycleAlignmentResult(r)
+	r.AddN('M', ^uint32(0))
+	if got := r.CIGAR(false); got != "4294967295M" {
+		t.Fatalf("CIGAR = %s", got)
+	}
+}

@@ -2,6 +2,12 @@
 
 - v0.5.3
     - fix adaptive-reduction panics when wavefront components have different score capacities.
+    - prevent alignment steps beyond sequence ends and follow recorded predecessors during traceback.
+    - prevent out-of-bounds score reads; make Increase a no-op for missing scores or diagonals.
+    - honor configured buffer sizes during growth and pooled-object reuse.
+    - preserve unsigned adaptive thresholds and CIGAR counts on 32-bit systems.
+    - reject nil adaptive options and correct insertion/deletion component plots.
+    - stop packaging after a failed build without deleting previous release artifacts.
 - v0.5.2
     - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
     - preserve semi-global endpoint constraints and fix traceback through first-row or first-column gaps.

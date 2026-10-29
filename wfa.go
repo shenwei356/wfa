@@ -134,10 +134,11 @@ func New(p *Penalties, opt *Options) *Aligner {
 	return algn
 }
 
-// AdaptiveReduction sets the adaptive reduction parameters
+// AdaptiveReduction sets the adaptive reduction parameters.
+// Options must be non-nil and the minimum wavefront length must be positive.
 func (algn *Aligner) AdaptiveReduction(ad *AdaptiveReductionOption) error {
-	if ad.MinWFLen == 0 {
-		return fmt.Errorf("cutoff step should not be 0")
+	if ad == nil || ad.MinWFLen == 0 {
+		return fmt.Errorf("wfa: adaptive reduction requires a positive minimum wavefront length")
 	}
 	algn.ad = ad
 	return nil
@@ -235,9 +236,9 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 	var s uint32
 	var lo, hi int
 	reduce := algn.ad != nil
-	var minWFLen int
+	var minWFLen uint32
 	if reduce {
-		minWFLen = int(algn.ad.MinWFLen)
+		minWFLen = algn.ad.MinWFLen
 	}
 	for {
 		// fmt.Printf("---------------------- s: %-3d ----------------------\n", s)
@@ -252,7 +253,7 @@ func (algn *Aligner) AlignPointers(q, t *[]byte) (*AlignmentResult, error) {
 			}
 
 			// fmt.Printf("reduce:\n")
-			if reduce && hi-lo+1 >= minWFLen {
+			if reduce && uint32(hi-lo+1) >= minWFLen {
 				algn.reduce(q, t, s)
 			}
 		}
@@ -524,7 +525,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 
 	_lo := lo
 	_hi := hi
-	maxDistDiff := int(algn.ad.MaxDistDiff)
+	maxDistDiff := algn.ad.MaxDistDiff
 	updateLo := true
 	found := false
 	I := algn.I
@@ -533,7 +534,7 @@ func (algn *Aligner) reduce(q, t *[]byte, s uint32) {
 		if d < 0 {
 			continue
 		}
-		if d-minDist > maxDistDiff {
+		if uint32(d-minDist) > maxDistDiff {
 			found = true
 			if updateLo {
 				_lo = lo + i + 1
@@ -654,13 +655,14 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		// --------------------------------------
 		// insertion: 🠦
+		// Insertion consumes a target base, so its source cannot be at the target end.
 		fromM = false
 		v1 = 0
 		if wfM_GapOpen != nil && k-1 >= wfM_GapOpen.Lo && k-1 <= wfM_GapOpen.Hi {
 			raw = wfM_GapOpen.Offsets[iMinus]
 			fromM = raw != 0
 			v1 = raw >> wfaTypeBits
-			if fromM && int(v1) > lenT {
+			if fromM && int(v1) >= lenT {
 				fromM = false
 				v1 = 0
 			}
@@ -672,7 +674,7 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 			raw = wfI_GapExt.Offsets[iMinus]
 			fromI = raw != 0
 			v2 = raw >> wfaTypeBits
-			if fromI && int(v2) > lenT {
+			if fromI && int(v2) >= lenT {
 				fromI = false
 				v2 = 0
 			}
@@ -750,13 +752,14 @@ func (algn *Aligner) next(q, t *[]byte, s uint32) {
 
 		// --------------------------------------
 		// mismatch: ⬂
+		// Mismatch consumes one base from each sequence; neither source may be at an end.
 		fromM = false
 		v1 = 0
 		if wfM_Mismatch != nil && k >= wfM_Mismatch.Lo && k <= wfM_Mismatch.Hi {
 			raw = wfM_Mismatch.Offsets[i]
 			fromM = raw != 0
 			v1 = raw >> wfaTypeBits
-			if fromM && (int(v1) > lenT || int(v1)-k > lenQ) {
+			if fromM && (int(v1) >= lenT || int(v1)-k >= lenQ) {
 				fromM = false
 				v1 = 0
 			}
@@ -821,9 +824,8 @@ func (algn *Aligner) backTrace(q, t *[]byte, s uint32, Ak int) *AlignmentResult 
 	var qBegin, tBegin int
 	var freeLeading, freeTrailing uint32 // Actual free clipping, before CIGAR merging.
 
-	var v1, v2, Isk, Dsk, offset0 uint32
-	var fromMI, fromMD, sourceFound bool
-	var fromI, fromD, fromM bool
+	var offset0 uint32
+	var sourceFound bool
 	var sMismatch, sGapOpen, sGapExt uint32
 	var previousFromM bool
 	var nMatches int
@@ -869,64 +871,30 @@ LOOP:
 		sGapOpen = s - p.GapOpen - p.GapExt
 		sGapExt = s - p.GapExt
 
-		// offset of the source
-		fromMI, fromMD, sourceFound = false, false, false
+		// Follow the predecessor recorded during recurrence. Recomputing the
+		// maximum here can select a boundary transition that next() rejected,
+		// or a different state after adaptive pruning.
 		switch wfaType {
-		case wfaInsertExt:
-			v1, _, fromM = M.Get(sGapOpen, k-1)
-			v2, _, fromI = I.Get(sGapExt, k-1)
-			if fromM || fromI {
-				fromMI = true
-				sourceFound = true
-				offset0 = max(v1, v2) + 1
-			}
-
-			M0 = I // for get the wfaType of the next one
-		case wfaDeleteExt:
-			v1, _, fromM = M.Get(sGapOpen, k+1)
-			v2, _, fromD = D.Get(sGapExt, k+1)
-			if fromM || fromD {
-				fromMD = true
-				sourceFound = true
-				offset0 = max(v1, v2)
-			}
-
-			M0 = D
-		default:
-			v1, _, fromM = M.Get(sGapOpen, k-1)
-			v2, _, fromI = I.Get(sGapExt, k-1)
-			if fromM || fromI {
-				fromMI = true
-				Isk = max(v1, v2) + 1
-			} else {
-				Isk = 0
-			}
-
-			v1, _, fromM = M.Get(sGapOpen, k+1)
-			v2, _, fromD = D.Get(sGapExt, k+1)
-			if fromM || fromD {
-				fromMD = true
-				Dsk = max(v1, v2)
-			} else {
-				Dsk = 0
-			}
-
-			v1, _, fromM = M.Get(sMismatch, k)
-			if fromMI || fromMD || fromM {
-				sourceFound = true
-				offset0 = 0
-				if fromMI {
-					offset0 = Isk
-				}
-				if fromMD && Dsk > offset0 {
-					offset0 = Dsk
-				}
-				if fromM && v1+1 > offset0 {
-					offset0 = v1 + 1
-				}
-			}
-
+		case wfaInsertOpen:
+			offset0, _, sourceFound = M.Get(sGapOpen, k-1)
+			offset0++
 			M0 = M
+		case wfaInsertExt:
+			offset0, _, sourceFound = I.Get(sGapExt, k-1)
+			offset0++
+			M0 = I
+		case wfaDeleteOpen:
+			offset0, _, sourceFound = M.Get(sGapOpen, k+1)
+			M0 = M
+		case wfaDeleteExt:
+			offset0, _, sourceFound = D.Get(sGapExt, k+1)
+			M0 = D
+		case wfaMismatch:
+			offset0, _, sourceFound = M.Get(sMismatch, k)
+			offset0++
+			M0 = M
+		default:
+			sourceFound = false // The score-zero origin or a semi-global seed.
 		}
 		if !sourceFound {
 			// fmt.Printf("  break as there's no valid source offset\n")

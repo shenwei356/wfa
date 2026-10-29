@@ -46,7 +46,7 @@ func (algn *Aligner) Plot(q, t *[]byte, wtr io.Writer, _M *Component, notChangeT
 
 	lenQ := len(*q)
 	lenT := len(*t)
-	isM := M.IsM
+	isM := _M.IsM
 
 	// create the matrix
 	m := poolMatrix.Get().(*[]*[]int32)

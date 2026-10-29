@@ -253,7 +253,7 @@ func (cigar *AlignmentResult) CIGAR(onlyAignedRegion bool) string {
 	}
 	for _, op := range ops {
 		// buf.WriteString(strconv.Itoa(int(op.N)))
-		buf.WriteString(strconv.Itoa(int(op & MaskLower32)))
+		buf.WriteString(strconv.FormatUint(op&MaskLower32, 10))
 		// buf.WriteByte(op.Op)
 		buf.WriteByte(byte(op >> 32))
 	}

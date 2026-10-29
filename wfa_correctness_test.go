@@ -515,3 +515,296 @@ func TestAdaptiveReductionUnequalComponentLengths(t *testing.T) {
 		}
 	}
 }
+
+// validateAlignmentDetails independently checks CIGAR bases, consumption, and match-region statistics.
+func validateAlignmentDetails(t *testing.T, q, target []byte, r *AlignmentResult, p *Penalties, global, exact bool) {
+	t.Helper()
+	qi, ti := 0, 0
+	var score uint32
+	first, last := -1, -1
+	bounds := [4]int{}
+	for i, packed := range r.Ops {
+		op, n := Op(packed)
+		if n == 0 {
+			t.Fatalf("zero CIGAR op: %s", r.CIGAR(false))
+		}
+		if i > 0 && op == byte(r.Ops[i-1]>>32) {
+			t.Fatalf("unmerged CIGAR: %s", r.CIGAR(false))
+		}
+		switch op {
+		case 'M', 'X':
+			for j := uint32(0); j < n; j++ {
+				if qi >= len(q) || ti >= len(target) || (op == 'M') != (q[qi] == target[ti]) {
+					t.Fatalf("invalid %c at %d,%d q=%q t=%q CIGAR=%s p=%+v global=%t exact=%t", op, qi, ti, q, target, r.CIGAR(false), p, global, exact)
+				}
+				qi++
+				ti++
+				if op == 'M' {
+					if first < 0 {
+						first = i
+						bounds[0], bounds[2] = qi, ti
+					}
+					last = i
+					bounds[1], bounds[3] = qi, ti
+				}
+			}
+			if op == 'X' {
+				score += n * p.Mismatch
+			}
+		case 'I':
+			ti += int(n)
+			score += p.GapOpen + n*p.GapExt
+		case 'D':
+			qi += int(n)
+			score += p.GapOpen + n*p.GapExt
+		case 'H':
+			if global || i != 0 && i != len(r.Ops)-1 {
+				t.Fatalf("invalid clipping: %s", r.CIGAR(false))
+			}
+			qi += int(n)
+		default:
+			t.Fatalf("invalid CIGAR op %c", op)
+		}
+	}
+	if qi != len(q) || ti != len(target) {
+		t.Fatalf("consumed %d/%d vs %d/%d: %s", qi, ti, len(q), len(target), r.CIGAR(false))
+	}
+	if got := [4]int{r.QBegin, r.QEnd, r.TBegin, r.TEnd}; got != bounds {
+		t.Fatalf("bounds=%v want=%v q=%q t=%q CIGAR=%s global=%t exact=%t", got, bounds, q, target, r.CIGAR(false), global, exact)
+	}
+	var matches, gaps, gapRegions, alen uint32
+	for i := first; i >= 0 && i <= last; i++ {
+		op, n := Op(r.Ops[i])
+		alen += n
+		if op == 'M' {
+			matches += n
+		}
+		if op == 'I' || op == 'D' {
+			gaps += n
+			gapRegions++
+		}
+	}
+	if got, want := [4]uint32{r.Matches, r.Gaps, r.GapRegions, r.AlignLen}, [4]uint32{matches, gaps, gapRegions, alen}; got != want {
+		t.Fatalf("stats=%v want=%v", got, want)
+	}
+	if global && score != r.Score {
+		t.Fatalf("CIGAR score=%d reported=%d", score, r.Score)
+	}
+	want := affineGlobalScore(q, target, p)
+	if !global {
+		want = affineSemiGlobalScore(q, target, p)
+	}
+	if (exact && want != r.Score) || r.Score < want {
+		t.Fatalf("q=%q t=%q p=%+v global=%t exact=%t score=%d optimal=%d cigar=%s", q, target, p, global, exact, r.Score, want, r.CIGAR(false))
+	}
+	for _, trim := range []bool{false, true} {
+		Q, A, T := r.AlignmentText(&q, &target, trim)
+		if len(*Q) != len(*T) || len(*Q) != len(*A) {
+			t.Fatal("rendered lengths differ")
+		}
+		RecycleAlignmentText(Q, A, T)
+	}
+}
+
+// TestAdaptiveAlignmentSequenceEnds prevents recurrence steps beyond either
+// input, even when aggressive pruning makes a nonoptimal path win.
+func TestAdaptiveAlignmentSequenceEnds(t *testing.T) {
+	p := &Penalties{Mismatch: 3, GapOpen: 6, GapExt: 3}
+	for _, reverse := range []bool{false, true} {
+		for _, swap := range []bool{false, true} {
+			t.Run(fmt.Sprintf("reverse=%t/swap=%t", reverse, swap), func(t *testing.T) {
+				q, target := []byte("AC"), []byte("TTATA")
+				if reverse {
+					reverseComplement(q)
+					reverseComplement(target)
+				}
+				if swap {
+					q, target = target, q
+				}
+				a := New(p, DefaultOptions)
+				defer RecycleAligner(a)
+				if err := a.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: 1}); err != nil {
+					t.Fatal(err)
+				}
+				for i := 0; i < 2; i++ {
+					r, err := a.Align(q, target)
+					if err != nil {
+						t.Fatal(err)
+					}
+					validateAlignmentDetails(t, q, target, r, p, true, false)
+					RecycleAlignmentResult(r)
+				}
+			})
+		}
+	}
+}
+
+// reverseComplement reverses DNA orientation for alignment regression cases.
+func reverseComplement(s []byte) {
+	for i, j := 0, len(s)-1; i <= j; i, j = i+1, j-1 {
+		complement := func(b byte) byte {
+			switch b {
+			case 'A':
+				return 'T'
+			case 'T':
+				return 'A'
+			case 'C':
+				return 'G'
+			case 'G':
+				return 'C'
+			default:
+				return b
+			}
+		}
+		s[i], s[j] = complement(s[j]), complement(s[i])
+	}
+}
+
+// FuzzAlignmentResult compares exact alignment with an independent affine-gap
+// oracle. Heuristic alignment may cost more, but must return a valid full path,
+// consistent match-region statistics, and renderable CIGAR coordinates.
+func FuzzAlignmentResult(f *testing.F) {
+	for _, pair := range [][2]string{{"AC", "TTATA"}, {"A", "C"}, {"ACGT", "ACGT"}, {"ACACACA", "CAC"}, {"AAAA", "AAACAAAA"}, {"aN-\x00", "N-a\x00"}} {
+		for _, global := range []bool{true, false} {
+			for _, adaptive := range []uint8{0, 1, 4} {
+				f.Add([]byte(pair[0]), []byte(pair[1]), uint8(2), uint8(6), uint8(2), global, adaptive)
+			}
+		}
+	}
+	// Minimized fuzz regression: traceback must not select an invalid predecessor.
+	f.Add([]byte("0CAC0C0"), []byte("CAC"), uint8(3), uint8(6), uint8(1), true, uint8(1))
+	f.Fuzz(func(t *testing.T, q, target []byte, mismatch, open, extend uint8, global bool, adaptive uint8) {
+		if len(q) == 0 || len(target) == 0 || len(q) > 96 || len(target) > 96 {
+			return
+		}
+		p := &Penalties{Mismatch: 1 + uint32(mismatch)%15, GapOpen: uint32(open) % 10, GapExt: 1 + uint32(extend)%6}
+		a := New(p, &Options{GlobalAlignment: global})
+		defer RecycleAligner(a)
+		mode := adaptive % 5
+		if mode != 0 {
+			ad := &AdaptiveReductionOption{MinWFLen: 1, MaxDistDiff: []uint32{0, 0, 1, 5, 50}[mode]}
+			if err := a.AdaptiveReduction(ad); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for reuse := 0; reuse < 2; reuse++ {
+			r, err := a.Align(q, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			validateAlignmentDetails(t, q, target, r, p, global, mode == 0)
+			RecycleAlignmentResult(r)
+		}
+	})
+}
+
+// TestAdaptiveReductionLargeThreshold checks unsigned options on 32-bit hosts.
+func TestAdaptiveReductionLargeThreshold(t *testing.T) {
+	a := New(DefaultPenalties, DefaultOptions)
+	defer RecycleAligner(a)
+	if err := a.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: 1, MaxDistDiff: ^uint32(0)}); err != nil {
+		t.Fatal(err)
+	}
+	q, target := make([]byte, 100), make([]byte, 100)
+	a.initComponents(&q, &target)
+	for k := -1; k <= 1; k++ {
+		a.M.Set(10, k, 90, wfaMatch)
+	}
+	a.reduce(&q, &target, 10)
+	for k := -1; k <= 1; k++ {
+		if _, _, ok := a.M.Get(10, k); !ok {
+			t.Fatalf("large distance threshold pruned diagonal %d", k)
+		}
+	}
+}
+
+// TestAdaptiveReductionLargeMinimum keeps narrow wavefronts unpruned on 32-bit hosts.
+func TestAdaptiveReductionLargeMinimum(t *testing.T) {
+	p := &Penalties{Mismatch: 3, GapOpen: 6, GapExt: 3}
+	a := New(p, DefaultOptions)
+	defer RecycleAligner(a)
+	if err := a.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: ^uint32(0)}); err != nil {
+		t.Fatal(err)
+	}
+	q, target := []byte("AC"), []byte("TTATA")
+	r, err := a.Align(q, target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer RecycleAlignmentResult(r)
+	validateAlignmentDetails(t, q, target, r, p, true, true)
+}
+
+// TestAdaptiveTracebackBoundary follows the stored predecessor instead of an
+// inadmissible mismatch beyond a sequence end. Both DNA orientations are checked.
+func TestAdaptiveTracebackBoundary(t *testing.T) {
+	for _, reverse := range []bool{false, true} {
+		for _, swap := range []bool{false, true} {
+			q, target := []byte("GCACGCG"), []byte("CAC")
+			if reverse {
+				reverseComplement(q)
+				reverseComplement(target)
+			}
+			if swap {
+				q, target = target, q
+			}
+			a := New(DefaultPenalties, DefaultOptions)
+			if err := a.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: 1}); err != nil {
+				t.Fatal(err)
+			}
+			r, err := a.Align(q, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			validateAlignmentDetails(t, q, target, r, DefaultPenalties, true, false)
+			RecycleAlignmentResult(r)
+			RecycleAligner(a)
+		}
+	}
+}
+
+// TestInvalidAdaptiveOptions reports invalid settings without disturbing the
+// previously configured heuristic or panicking on a nil options pointer.
+func TestInvalidAdaptiveOptions(t *testing.T) {
+	a := New(DefaultPenalties, DefaultOptions)
+	defer RecycleAligner(a)
+	if err := a.AdaptiveReduction(DefaultAdaptiveOption); err != nil {
+		t.Fatal(err)
+	}
+	for _, ad := range []*AdaptiveReductionOption{nil, {MinWFLen: 0, CutoffStep: 1}} {
+		if err := a.AdaptiveReduction(ad); err == nil {
+			t.Fatal("invalid options were accepted")
+		}
+		if a.ad != DefaultAdaptiveOption {
+			t.Fatal("invalid options changed the existing heuristic")
+		}
+	}
+}
+
+// TestRandomAlignmentModes keeps broad oracle and rendering checks in the
+// ordinary suite, including default/aggressive heuristics and aligner reuse.
+func TestRandomAlignmentModes(t *testing.T) {
+	rng := rand.New(rand.NewSource(20261029))
+	for i := 0; i < 1000; i++ {
+		p := &Penalties{Mismatch: uint32(1 + rng.Intn(15)), GapOpen: uint32(rng.Intn(10)), GapExt: uint32(1 + rng.Intn(6))}
+		global, mode := rng.Intn(2) == 0, rng.Intn(5)
+		a := New(p, &Options{GlobalAlignment: global})
+		if mode != 0 {
+			if err := a.AdaptiveReduction(&AdaptiveReductionOption{MinWFLen: 1, MaxDistDiff: []uint32{0, 0, 1, 5, 50}[mode]}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		q, target := generateRandomSeq(1+rng.Intn(150), rng.Int63()), generateRandomSeq(1+rng.Intn(150), rng.Int63())
+		for orientation := 0; orientation < 2; orientation++ {
+			r, err := a.Align(q, target)
+			if err != nil {
+				t.Fatal(err)
+			}
+			validateAlignmentDetails(t, q, target, r, p, global, mode == 0)
+			RecycleAlignmentResult(r)
+			reverseComplement(q)
+			reverseComplement(target)
+		}
+		RecycleAligner(a)
+	}
+}

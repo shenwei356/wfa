@@ -1,12 +1,14 @@
 #!/usr/bin/env sh
 
+set -eu
+
 # export GOEXPERIMENT=greenteagc # for go1.25
 CGO_ENABLED=0 gox -os="windows darwin linux" -arch="amd64 arm64" -tags netgo -ldflags '-w -s' -asmflags '-trimpath' \
     -output "wfa-go_{{.OS}}_{{.Arch}}"
 
 dir=binaries
-mkdir -p $dir;
-rm -rf $dir/$f;
+rm -rf "$dir";
+mkdir -p "$dir";
 
 for f in wfa-go_*; do
     mkdir -p $dir/$f;

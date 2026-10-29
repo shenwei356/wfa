@@ -24,13 +24,12 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"slices"
 	"sync"
 )
 
 // OFFSETS_BASE_SIZE is the base size of the offset slice.
 var OFFSETS_BASE_SIZE = 128
-
-var _OFFSETS_GROW_SLICE = make([]uint32, OFFSETS_BASE_SIZE)
 
 // WaveFront is a list of offsets for different k values.
 // We also use the low 3 bits to store the backtrace type.
@@ -53,8 +52,13 @@ func NewWaveFront() *WaveFront {
 	wf := poolWaveFront.Get().(*WaveFront)
 	wf.Lo = math.MaxInt
 	wf.Hi = math.MinInt
-	wf.Offsets = wf.Offsets[:OFFSETS_BASE_SIZE] // reset the length to the base size
-	clear(wf.Offsets)                           // reset all values as 0's.
+	// Honor a larger base size even when the pool returns an older wavefront.
+	if cap(wf.Offsets) < OFFSETS_BASE_SIZE {
+		wf.Offsets = make([]uint32, OFFSETS_BASE_SIZE)
+	} else {
+		wf.Offsets = wf.Offsets[:OFFSETS_BASE_SIZE]
+		clear(wf.Offsets)
+	}
 
 	return wf
 }
@@ -92,12 +96,7 @@ func k2i_inline(k int) int {
 // Set sets an offset with a given backtrace type.
 func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
 	i := k2i_inline(k)
-	if i >= len(wf.Offsets) { // grow the slice
-		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
-		for j := 0; j < n; j++ {
-			wf.Offsets = append(wf.Offsets, _OFFSETS_GROW_SLICE...)
-		}
-	}
+	wf.growOffsets(i)
 	wf.Offsets[i] = offset<<wfaTypeBits | wfaType
 
 	// update k range
@@ -115,12 +114,7 @@ func (wf *WaveFront) Set(k int, offset uint32, wfaType uint32) {
 // Here, offsetWithType = offset<<wfaTypeBits | wfaType.
 func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
 	i := k2i_inline(k)
-	if i >= len(wf.Offsets) { // grow the slice
-		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
-		for j := 0; j < n; j++ {
-			wf.Offsets = append(wf.Offsets, _OFFSETS_GROW_SLICE...)
-		}
-	}
+	wf.growOffsets(i)
 	wf.Offsets[i] = offsetWithType
 
 	// update k range
@@ -134,26 +128,28 @@ func (wf *WaveFront) SetRaw(k int, offsetWithType uint32) {
 	}
 }
 
-// Increase increases the offset by delta.
-// Here delta does not contain the backtrace type.
-func (wf *WaveFront) Increase(k int, delta uint32) {
-	i := k2i_inline(k)
-	if i >= len(wf.Offsets) { // grow the slice
-		n := (i - len(wf.Offsets) + OFFSETS_BASE_SIZE) / OFFSETS_BASE_SIZE
-		for j := 0; j < n; j++ {
-			wf.Offsets = append(wf.Offsets, _OFFSETS_GROW_SLICE...)
-		}
+// growOffsets ensures index is writable, using the current configured block size.
+// Clear reused capacity so old alignment data cannot reappear after a reset.
+func (wf *WaveFront) growOffsets(index int) {
+	if index < len(wf.Offsets) {
+		return
 	}
-	wf.Offsets[i] += delta << wfaTypeBits
+	oldLen := len(wf.Offsets)
+	newLen := (index/OFFSETS_BASE_SIZE + 1) * OFFSETS_BASE_SIZE
+	wf.Offsets = slices.Grow(wf.Offsets, newLen-oldLen)[:newLen]
+	// Grow preserves old capacity contents, including offsets from prior alignments.
+	clear(wf.Offsets[oldLen:])
+}
 
-	// update k range
-	// wf.Lo = min(wf.Lo, k)
-	// wf.Hi = max(wf.Hi, k)
-	if k < wf.Lo {
-		wf.Lo = k
+// Increase increases an existing offset by delta, preserving its backtrace type.
+// Missing diagonals are left unchanged.
+func (wf *WaveFront) Increase(k int, delta uint32) {
+	if k < wf.Lo || k > wf.Hi {
+		return
 	}
-	if k > wf.Hi {
-		wf.Hi = k
+	i := k2i_inline(k)
+	if wf.Offsets[i] != 0 {
+		wf.Offsets[i] += delta << wfaTypeBits
 	}
 }
 

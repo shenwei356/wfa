@@ -87,6 +87,13 @@ more details
 - `Mismatch` and `GapExt` must be positive. `GapOpen` may be zero, and
   `GapOpen + GapExt` must fit in `uint32`. `Align` and `AlignPointers` return
   `ErrInvalidPenalties` for unsupported penalties.
+- `AdaptiveReduction` requires non-nil options and a positive `MinWFLen`.
+  Its thresholds retain their full `uint32` range on 32-bit and 64-bit systems.
+- `WAVEFRONTS_BASE_SIZE` and `OFFSETS_BASE_SIZE` must be positive. Set them
+  before concurrent use; changing them while aligners are running is not supported.
+  `NewComponent` and `NewWaveFront` resize smaller pooled buffers on checkout.
+- Component readers return `false` for absent scores or diagonals. `Delete` and
+  `Increase` leave absent entries unchanged; `Increase` preserves the traceback type.
 - `AlignmentResult.Score` is the gap-affine cost of the returned CIGAR.
   Adaptive reduction is heuristic and may return a nonoptimal alignment.
 - Semi-global alignment retains its established endpoint constraint: the shorter

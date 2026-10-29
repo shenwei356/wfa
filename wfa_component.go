@@ -59,7 +59,7 @@ func (a *waveFrontArena) alloc() *WaveFront {
 	// Initialize the WaveFront
 	wf.Lo = math.MaxInt
 	wf.Hi = math.MinInt
-	if wf.Offsets == nil {
+	if cap(wf.Offsets) < OFFSETS_BASE_SIZE {
 		wf.Offsets = make([]uint32, OFFSETS_BASE_SIZE)
 	} else {
 		wf.Offsets = wf.Offsets[:OFFSETS_BASE_SIZE]
@@ -79,7 +79,7 @@ func (a *waveFrontArena) reset() {
 type Component struct {
 	IsM bool // if it is true, the visualization is slightly different
 
-	WaveFronts []*WaveFront // WaveFronts
+	WaveFronts []*WaveFront // Indexed by score; M, I, and D grow independently.
 	arena      waveFrontArena
 }
 
@@ -91,7 +91,12 @@ func NewComponent() *Component {
 
 	cpt.Reset()
 
-	cpt.WaveFronts = cpt.WaveFronts[:WAVEFRONTS_BASE_SIZE]
+	// A pooled component may predate a larger configured base size.
+	if cap(cpt.WaveFronts) < WAVEFRONTS_BASE_SIZE {
+		cpt.WaveFronts = make([]*WaveFront, WAVEFRONTS_BASE_SIZE)
+	} else {
+		cpt.WaveFronts = cpt.WaveFronts[:WAVEFRONTS_BASE_SIZE]
+	}
 
 	return cpt
 }
@@ -171,18 +176,8 @@ func (cpt *Component) waveFrontForRange(s uint32, lo, hi int) *WaveFront {
 		cpt.WaveFronts[s] = wf
 	}
 	maxIndex := max(k2i_inline(lo), k2i_inline(hi))
-	if maxIndex >= len(wf.Offsets) {
-		newLen := (maxIndex/OFFSETS_BASE_SIZE + 1) * OFFSETS_BASE_SIZE
-		if newLen <= cap(wf.Offsets) {
-			oldLen := len(wf.Offsets)
-			wf.Offsets = wf.Offsets[:newLen]
-			clear(wf.Offsets[oldLen:])
-		} else {
-			offsets := make([]uint32, newLen)
-			copy(offsets, wf.Offsets)
-			wf.Offsets = offsets
-		}
-	}
+	wf.growOffsets(maxIndex)
+
 	return wf
 }
 
@@ -201,11 +196,11 @@ func (cpt *Component) SetRaw(s uint32, k int, offset uint32) {
 	wf.SetRaw(k, offset)
 }
 
-// Increase increases the offset by delta.
-// Here delta does not contain the backtrace type
+// Increase increases an existing offset by delta, preserving its backtrace type.
+// Missing scores and diagonals are left unchanged.
 func (cpt *Component) Increase(s uint32, k int, delta uint32) {
-	if s >= uint32(len(cpt.WaveFronts)) {
-		cpt.WaveFronts = append(cpt.WaveFronts, _WAVEFRONTS_GROW_SLICE...)
+	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
+		return
 	}
 	cpt.WaveFronts[s].Increase(k, delta)
 }
@@ -232,8 +227,7 @@ func (cpt *Component) GetAfterDiff(s uint32, diff uint32, k int) (uint32, uint32
 		return 0, 0, false
 	}
 	s -= diff
-	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
-	if cpt.WaveFronts[s] == nil {
+	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
 		return 0, 0, false
 	}
 	return cpt.WaveFronts[s].Get(k)
@@ -245,8 +239,7 @@ func (cpt *Component) GetRawAfterDiff(s uint32, diff uint32, k int) (uint32, boo
 		return 0, false
 	}
 	s -= diff
-	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
-	if cpt.WaveFronts[s] == nil {
+	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
 		return 0, false
 	}
 	return cpt.WaveFronts[s].GetRaw(k)
