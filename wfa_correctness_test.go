@@ -465,3 +465,53 @@ func TestSemiGlobalPaidTerminalGaps(t *testing.T) {
 		RecycleAligner(a)
 	}
 }
+
+// TestAdaptiveReductionUnequalComponentLengths checks pruning at score-block
+// boundaries when insertion and deletion components have grown independently.
+func TestAdaptiveReductionUnequalComponentLengths(t *testing.T) {
+	for _, score := range []uint32{2048, 4096} {
+		for _, grown := range []string{"neither", "insertion", "deletion"} {
+			t.Run(fmt.Sprintf("score=%d/grown=%s", score, grown), func(t *testing.T) {
+				algn := New(DefaultPenalties, &Options{GlobalAlignment: true})
+				defer RecycleAligner(algn)
+				if err := algn.AdaptiveReduction(DefaultAdaptiveOption); err != nil {
+					t.Fatal(err)
+				}
+				query, target := make([]byte, 100), make([]byte, 100)
+				algn.initComponents(&query, &target)
+				algn.M.Set(score, -1, 1, wfaMatch)
+				algn.M.Set(score, 0, 90, wfaMatch)
+				algn.M.Set(score, 1, 1, wfaMatch)
+				var gap *Component
+				if grown == "insertion" {
+					gap = algn.I
+				} else if grown == "deletion" {
+					gap = algn.D
+				}
+				if gap != nil {
+					gap.Set(score, -1, 1, wfaMatch)
+					gap.Set(score, 0, 90, wfaMatch)
+					gap.Set(score, 1, 1, wfaMatch)
+				}
+				lengths := [3]int{len(algn.M.WaveFronts), len(algn.I.WaveFronts), len(algn.D.WaveFronts)}
+				algn.reduce(&query, &target, score)
+				if got := [3]int{len(algn.M.WaveFronts), len(algn.I.WaveFronts), len(algn.D.WaveFronts)}; got != lengths {
+					t.Fatalf("pruning grew components: %v -> %v", lengths, got)
+				}
+				for _, c := range []*Component{algn.M, gap} {
+					if c == nil {
+						continue
+					}
+					for _, k := range []int{-1, 1} {
+						if _, _, ok := c.Get(score, k); ok {
+							t.Fatalf("distant diagonal %d survived pruning", k)
+						}
+					}
+					if offset, _, ok := c.Get(score, 0); !ok || offset != 90 {
+						t.Fatalf("best diagonal lost: offset=%d exists=%v", offset, ok)
+					}
+				}
+			})
+		}
+	}
+}

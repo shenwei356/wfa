@@ -1,5 +1,7 @@
 # Changelog
 
+- v0.5.3
+    - fix adaptive-reduction panics when wavefront components have different score capacities.
 - v0.5.2
     - fix nonterminating adaptive global alignments by retaining valid terminal-gap paths.
     - preserve semi-global endpoint constraints and fix traceback through first-row or first-column gaps.

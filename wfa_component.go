@@ -252,10 +252,10 @@ func (cpt *Component) GetRawAfterDiff(s uint32, diff uint32, k int) (uint32, boo
 	return cpt.WaveFronts[s].GetRaw(k)
 }
 
-// Delete delete an offset of a s and k.
+// Delete deletes an offset at score s and diagonal k, if present.
 func (cpt *Component) Delete(s uint32, k int) {
-	// if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
-	if cpt.WaveFronts[s] == nil {
+	// Components grow independently; reduction may visit a score present only in M.
+	if s >= uint32(len(cpt.WaveFronts)) || cpt.WaveFronts[s] == nil {
 		return
 	}
 	cpt.WaveFronts[s].Delete(k)
