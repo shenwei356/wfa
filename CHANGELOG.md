@@ -1,5 +1,7 @@
 # Changelog
 
+- v0.5.4
+   - slightly speed up short alignments by bulk-clearing wavefront score tables during reset.
 - v0.5.3
     - fix adaptive-reduction panics when wavefront components have different score capacities.
     - prevent alignment steps beyond sequence ends and follow recorded predecessors during traceback.

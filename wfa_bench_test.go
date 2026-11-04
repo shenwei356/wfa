@@ -61,7 +61,7 @@ func benchmarkAlign(b *testing.B, length int, mismatchRate float64, adaptive boo
 
 func BenchmarkAlign(b *testing.B) {
 	for _, length := range []int{100, 1000} {
-		for _, mismatchRate := range []float64{0.05, 0.10, 0.20} {
+		for _, mismatchRate := range []float64{0, 0.05, 0.10, 0.20} {
 			name := fmt.Sprintf("%dbp/mismatch-%02d", length, int(mismatchRate*100))
 			b.Run(name, func(b *testing.B) {
 				benchmarkAlign(b, length, mismatchRate, false)

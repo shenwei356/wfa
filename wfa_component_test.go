@@ -5,6 +5,37 @@ import (
 	"testing"
 )
 
+// TestComponentResetSparseAndExternalWaveFronts covers score-table growth and
+// direct writes to the exported slice, including reuse after a sparse alignment.
+func TestComponentResetSparseAndExternalWaveFronts(t *testing.T) {
+	c := NewComponent()
+	defer RecycleComponent(c)
+	c.Set(0, -2, 3, wfaMatch)
+	c.SetRaw(5000, 2, 7<<wfaTypeBits|wfaMismatch)
+	c.waveFrontForRange(2048, -3, 3).Set(3, 8, wfaInsertOpen)
+	// Callers can populate the public score table without using a setter.
+	c.WaveFronts[len(c.WaveFronts)-1] = &WaveFront{}
+	length, capacity := len(c.WaveFronts), cap(c.WaveFronts)
+	for pass := 0; pass < 2; pass++ {
+		c.Reset()
+		if len(c.WaveFronts) != length || cap(c.WaveFronts) != capacity {
+			t.Fatal("reset changed the score-table size")
+		}
+		for s, wf := range c.WaveFronts {
+			if wf != nil {
+				t.Fatalf("pass %d: score %d survived reset", pass, s)
+			}
+		}
+		c.Set(0, 2, 5, wfaMatch)
+		if _, _, ok := c.Get(0, -2); ok {
+			t.Fatal("stale diagonal survived arena reuse")
+		}
+		if offset, typ, ok := c.Get(0, 2); !ok || offset != 5 || typ != wfaMatch {
+			t.Fatalf("reused offset = %d,%d,%v", offset, typ, ok)
+		}
+	}
+}
+
 // TestComponentSparseScore checks setters beyond more than one growth block.
 func TestComponentSparseScore(t *testing.T) {
 	for _, raw := range []bool{false, true} {

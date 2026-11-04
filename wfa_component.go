@@ -101,14 +101,19 @@ func NewComponent() *Component {
 	return cpt
 }
 
-// Reset clears all existing wavefronts for new using.
+// Reset clears all score entries and rewinds the arena for reuse.
 func (cpt *Component) Reset() {
-	// Only clear the used part of the slice for better performance
-	for i, wf := range cpt.WaveFronts {
-		if wf != nil {
-			cpt.WaveFronts[i] = nil
-		}
-	}
+	// // Only clear the used part of the slice for better performance
+	// for i, wf := range cpt.WaveFronts {
+	// 	if wf != nil {
+	// 		cpt.WaveFronts[i] = nil
+	// 	}
+	// }
+
+	// Bulk-clear the public score table, including entries written by callers.
+	// Slightly faster than the above loop
+	clear(cpt.WaveFronts)
+
 	// Reset the arena to reuse the memory chunks
 	cpt.arena.reset()
 }
